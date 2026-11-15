@@ -101,15 +101,15 @@ jobs:
             sleep 1
           done
 
-      - name: Wait for proxy
+      - name: Wait for proxy (backend ready)
         run: |
-          for i in $(seq 1 60); do
-            if curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/ 2>/dev/null | grep -qE '^[0-9]{3}$'; then
-              echo "Proxy ready after ${i}s"
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:8080/api/tags 2>/dev/null | python3 -m json.tool >/dev/null 2>&1; then
+              echo "Proxy + backend ready after ${i}s"
               break
             fi
-            if [ "$i" -eq 60 ]; then
-              echo "::error::Proxy never became ready"
+            if [ "$i" -eq 90 ]; then
+              echo "::error::Proxy or backend never became ready"
               docker compose logs || true
               exit 1
             fi
@@ -128,8 +128,15 @@ jobs:
       - name: Tags passthrough
         run: |
           echo "=== Tags via proxy ==="
-          curl -sf http://localhost:8080/api/tags | python3 -m json.tool
-          echo ""
+          for i in $(seq 1 10); do
+            if curl -sf http://localhost:8080/api/tags | python3 -m json.tool; then
+              exit 0
+            fi
+            echo "Retry $i/10..."
+            sleep 1
+          done
+          echo "::error::Tags endpoint never returned valid JSON"
+          exit 1
 
       - name: Usage endpoint
         run: |
