@@ -1,0 +1,13 @@
+services:
+  sidecar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/api/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 3

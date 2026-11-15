@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - release/**
+  pull_request:
+    branches-ignore:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - run: go vet ./...
+      - run: go test -race -v ./...
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ollama-mirror:ci .
