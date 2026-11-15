@@ -1,0 +1,49 @@
+name: Python lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  python-lint:
+    name: Ruff + Ty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ruff + Ty
+        run: |
+          pip install ruff ty
+
+      - name: Ruff lint
+        run: |
+          # Only lint if Python files exist
+          if [ -z "$(find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' 2>/dev/null)" ]; then
+            echo "No Python files found, skipping ruff"
+            exit 0
+          fi
+          ruff check .
+
+      - name: Ruff format check
+        run: |
+          if [ -z "$(find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' 2>/dev/null)" ]; then
+            echo "No Python files found, skipping ruff format"
+            exit 0
+          fi
+          ruff format --check .
+
+      - name: Ty type check
+        run: |
+          if [ -z "$(find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' 2>/dev/null)" ]; then
+            echo "No Python files found, skipping ty"
+            exit 0
+          fi
+          ty check .

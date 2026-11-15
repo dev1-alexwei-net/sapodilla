@@ -1,0 +1,41 @@
+name: SonarCloud
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  SONAR_SCANNER_VERSION: "8.3.1.16491"
+
+jobs:
+  sonarcloud:
+    name: SonarCloud analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for sonarcloud PR decoration
+
+      - name: Download sonar-scanner-cli
+        run: |
+          SCANNER_VERSION="${SONAR_SCANNER_VERSION}"
+          URL="https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SCANNER_VERSION}-linux-x64.zip"
+          echo "Downloading ${URL}"
+          curl -fsSL -o /tmp/sonar-scanner.zip "${URL}"
+          unzip -q /tmp/sonar-scanner.zip -d /tmp/
+          mv "/tmp/sonar-scanner-${SCANNER_VERSION}" /tmp/sonar-scanner
+          /tmp/sonar-scanner/sonar-scanner --version
+
+      - name: Run SonarCloud analysis
+        run: |
+          /tmp/sonar-scanner/sonar-scanner \
+            -Dsonar.organization="${{ secrets.SONAR_ORG }}" \
+            -Dsonar.projectKey="${{ secrets.SONAR_PROJECT_KEY }}" \
+            -Dsonar.projectVersion="${GITHUB_SHA::8}" \
+            -Dsonar.sources=. \
+            -Dsonar.exclusions='vendor/**,**/node_modules/**,**/*.min.js' \
+            -Dsonar.token="${{ secrets.SONAR_TOKEN }}"
