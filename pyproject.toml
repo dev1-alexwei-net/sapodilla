@@ -43,12 +43,8 @@ quote-style = "double"
 
 [tool.ty]
 # Ty configuration — type checking for Python files
-# Only check the core sidecar code; skip test mocks that have optional deps
-exclude = [
-    "tests/**",
-    "mock-ollama/**",
-    "scripts/**",
-]
+# Ty doesn't support file-based exclusion; check all Python files
+# (test mocks use optional deps but Ty handles those gracefully)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
