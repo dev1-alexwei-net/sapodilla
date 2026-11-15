@@ -11,7 +11,7 @@ services:
   # Usage-tracking sidecar (Go, stdlib only)
   sidecar:
     build:
-      context: .
+      context: sidecar
       dockerfile: Dockerfile
     ports:
       - "9090:9090"

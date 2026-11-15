@@ -26,24 +26,24 @@ jobs:
 
       - name: gofmt check
         run: |
-          out="$(gofmt -l .)"
+          out="$(cd sidecar && gofmt -l .)"
           if [ -n "$out" ]; then
-            echo "::error::The following files need gofmt (run 'gofmt -w .'):"
+            echo "::error::The following files need gofmt (run 'gofmt -w .'):" 
             echo "$out"
             exit 1
           fi
 
       - name: go vet
-        run: go vet ./...
+        run: cd sidecar && go vet ./...
 
       - name: go test -race
-        run: go test -race -v ./...
+        run: cd sidecar && go test -race -v ./...
 
       - name: Save test results
         if: always()
         run: |
           mkdir -p /tmp/test-logs
-          go test -race -v -json ./... > /tmp/test-logs/go-test.json 2>&1 || true
+          cd sidecar && go test -race -v -json ./... > /tmp/test-logs/go-test.json 2>&1 || true
           echo '{"summary":"go test results"}' > /tmp/test-logs/manifest.json
 
       - name: Upload test logs
@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build sidecar image
-        run: docker build -t ollama-mirror:ci .
+        run: docker build -t ollama-mirror:ci sidecar/
 
       - name: Build nginx image
         run: docker build -t ollama-mirror-nginx:ci -f nginx/Dockerfile nginx/

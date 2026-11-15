@@ -59,8 +59,8 @@ Single binary, no external deps (stdlib only). Ports: `:9090` (internal).
 
 Three services:
 - `upstream` — the service being tracked. For testing, a small **mock upstream** (Python/uv) that mimics Ollama's shape: `GET /api/tags` returns a fixed JSON, `POST /api/generate` returns an SSE stream. This keeps tests hermetic (no real Ollama needed). A second compose profile (`ollama`) can swap in a real Ollama image.
-- `sidecar` — Go binary, built from `Dockerfile.sidecar`. Internal port `9090`. Depends on nothing (stateless w.r.t. upstream).
-- `proxy` — NGINX, built from `Dockerfile.proxy` (base `nginx:1.27-alpine` + our conf). Exposes `8080`. Depends on `upstream` + `sidecar`.
+- `sidecar` — Go binary, built from `sidecar/Dockerfile`. Internal port `9090`. Depends on nothing (stateless w.r.t. upstream).
+- `proxy` — NGINX, built from `nginx/Dockerfile` (base `nginx:1.27-alpine` + our conf). Exposes `8080`. Depends on `upstream` + `sidecar`.
 
 `docker compose up` → clients talk to `:8080` → NGINX mirrors to sidecar → NGINX forwards to upstream. Single front door.
 
