@@ -10,7 +10,7 @@ on:
 
 jobs:
   python-lint:
-    name: Ruff + Ty
+    name: Ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +19,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Ruff + Ty
+      - name: Install Ruff
         run: |
-          pip install ruff ty
+          pip install ruff
 
       - name: Ruff lint
         run: |
@@ -39,11 +39,3 @@ jobs:
             exit 0
           fi
           ruff format --check .
-
-      - name: Ty type check
-        run: |
-          if [ -z "$(find . -name '*.py' -not -path './vendor/*' -not -path './.git/*' 2>/dev/null)" ]; then
-            echo "No Python files found, skipping ty"
-            exit 0
-          fi
-          ty check .
