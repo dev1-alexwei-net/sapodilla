@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dev1-alexwei-net/ollama-mirror/internal/api"
 	"github.com/dev1-alexwei-net/ollama-mirror/internal/state"
 	"github.com/dev1-alexwei-net/ollama-mirror/internal/track"
 )
@@ -43,6 +44,9 @@ func main() {
 	// Track: called by NGINX mirror for every proxied Ollama request
 	trackHandler := track.NewHandler(st)
 	mux.Handle("/track", track.LogMiddleware(trackHandler))
+
+	// Usage: query recorded usage state
+	mux.Handle("/api/usage", api.NewUsageHandler(st))
 
 	// Log every request
 	server := &http.Server{

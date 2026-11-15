@@ -8,7 +8,7 @@ import (
 
 // Store is a concurrency-safe, in-memory last-seen tracker keyed by model name.
 type Store struct {
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	lastSeen map[string]time.Time
 }
 

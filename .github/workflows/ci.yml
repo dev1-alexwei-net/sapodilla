@@ -2,26 +2,188 @@ name: CI
 
 on:
   push:
-    branches-ignore:
+    branches:
       - main
-      - release/**
   pull_request:
-    branches-ignore:
+    branches:
       - main
+
+
+env:
+  GO_VERSION: "1.23"
 
 jobs:
-  test:
+  go-test:
+    name: Go vet + unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
-      - run: go vet ./...
-      - run: go test -race -v ./...
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: gofmt check
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "::error::The following files need gofmt (run 'gofmt -w .'):"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        run: go test -race -v ./...
+
+      - name: Save test results
+        if: always()
+        run: |
+          mkdir -p /tmp/test-logs
+          go test -race -v -json ./... > /tmp/test-logs/go-test.json 2>&1 || true
+          echo '{"summary":"go test results"}' > /tmp/test-logs/manifest.json
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-test-logs
+          path: /tmp/test-logs
+          retention-days: 7
 
   docker-build:
+    name: Docker build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t ollama-mirror:ci .
+
+      - name: Build sidecar image
+        run: docker build -t ollama-mirror:ci .
+
+      - name: Build nginx image
+        run: docker build -t ollama-mirror-nginx:ci -f nginx/Dockerfile nginx/
+
+      - name: Build mock-ollama image
+        run: docker build -t ollama-mirror-mock:ci -f mock-ollama/Dockerfile mock-ollama/
+
+      - name: Verify images
+        run: |
+          docker images | grep ollama-mirror
+          echo "Images built successfully"
+
+  smoke:
+    name: Smoke test (Docker Compose)
+    runs-on: ubuntu-latest
+    needs: [go-test, docker-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start stack
+        run: |
+          docker compose up -d
+          echo "Stack started"
+
+      - name: Wait for sidecar
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:9090/api/healthz >/dev/null 2>&1; then
+              echo "Sidecar ready after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "::error::Sidecar never became ready"
+              docker compose logs || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Wait for proxy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/ 2>/dev/null | grep -qE '^[0-9]{3}$'; then
+              echo "Proxy ready after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "::error::Proxy never became ready"
+              docker compose logs || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Health check
+        run: |
+          echo "=== Sidecar healthz ==="
+          curl -sf http://localhost:9090/api/healthz
+          echo ""
+          echo "=== Proxy reachable ==="
+          curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8080/
+          echo ""
+
+      - name: Tags passthrough
+        run: |
+          echo "=== Tags via proxy ==="
+          curl -sf http://localhost:8080/api/tags | python3 -m json.tool
+          echo ""
+
+      - name: Usage endpoint
+        run: |
+          echo "=== Usage via sidecar ==="
+          curl -sf http://localhost:9090/api/usage | python3 -m json.tool
+          echo ""
+
+      - name: Make a tracked request
+        run: |
+          echo "=== Making a chat request ==="
+          curl -sf http://localhost:8080/api/chat \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "model": "llama3.2:1b",
+              "messages": [{"role": "user", "content": "hello"}],
+              "stream": false
+            }' | python3 -m json.tool
+          echo ""
+
+      - name: Verify tracking
+        run: |
+          echo "=== Usage after request (via sidecar) ==="
+          curl -sf http://localhost:9090/api/usage | python3 -m json.tool
+          echo ""
+          echo "=== Checking total > 0 ==="
+          total=$(curl -sf http://localhost:9090/api/usage | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")
+          if [ "$total" -gt 0 ]; then
+            echo "PASS: total=$total"
+          else
+            echo "::error::FAIL: total=$total (expected > 0)"
+            exit 1
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "=== Docker compose logs ==="
+          docker compose logs --no-color || true
+
+      - name: Save smoke results
+        if: always()
+        run: |
+          mkdir -p /tmp/test-logs
+          docker compose logs --no-color > /tmp/test-logs/compose-logs.txt 2>&1 || true
+          echo '{"summary":"smoke test results"}' > /tmp/test-logs/manifest.json
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs
+          path: /tmp/test-logs
+          retention-days: 7
+
+      - name: Teardown
+        if: always()
+        run: docker compose down || true

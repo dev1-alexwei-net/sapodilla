@@ -8,7 +8,7 @@ FROM nginx:1.27-alpine AS final
 RUN rm /etc/nginx/conf.d/default.conf
 
 # Copy our config
-COPY nginx/ollama-mirror.conf /etc/nginx/conf.d/ollama-mirror.conf
+COPY ollama-mirror.conf /etc/nginx/conf.d/ollama-mirror.conf
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
