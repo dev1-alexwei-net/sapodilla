@@ -3,19 +3,16 @@
 Unit tests: verify the JSON shape of /api/usage and that the values
 are internally consistent.
 """
+
 from __future__ import annotations
 
-import time
-
-import pytest
 import requests
 
 
 def test_usage_shape(sidecar: str) -> None:
     base = sidecar
     # Make a request first so the state is non-empty
-    requests.post(f"{base}/track",
-                  json={"model": "shape-model", "endpoint": "/api/generate"})
+    requests.post(f"{base}/track", json={"model": "shape-model", "endpoint": "/api/generate"})
     r = requests.get(f"{base}/api/usage")
     assert r.status_code == 200
     assert r.headers["Content-Type"].startswith("application/json")
@@ -47,8 +44,7 @@ def test_usage_totals_consistent(sidecar: str) -> None:
     # Seed a known number of events
     N = 7
     for i in range(N):
-        requests.post(f"{base}/track",
-                      json={"model": f"m{i}", "endpoint": f"/ep{i}"})
+        requests.post(f"{base}/track", json={"model": f"m{i}", "endpoint": f"/ep{i}"})
     data = requests.get(f"{base}/api/usage").json()
     assert data["total_requests"] >= N
     # endpoints sum should be <= total_requests

@@ -5,9 +5,9 @@ nginx + sidecar). The nginx front door (port 8080) must pass through
 to the mock Ollama upstream (port 11434) and return the JSON body
 unchanged.
 """
+
 from __future__ import annotations
 
-import pytest
 import requests
 
 

@@ -5,6 +5,7 @@ Serves the few endpoints the sidecar/proxy need:
   GET  /api/tags   -> list of models
   POST /api/chat   -> canned response (counts as a "completion")
 """
+
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,12 +33,15 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         _body = self.rfile.read(length)
         if self.path == "/api/chat":
-            self._send(200, {
-                "model": "llama3.2:1b",
-                "message": {"role": "assistant", "content": "hello from mock"},
-                "done": True,
-                "total_duration": 1,
-            })
+            self._send(
+                200,
+                {
+                    "model": "llama3.2:1b",
+                    "message": {"role": "assistant", "content": "hello from mock"},
+                    "done": True,
+                    "total_duration": 1,
+                },
+            )
         else:
             self._send(404, {"error": "not found"})
 

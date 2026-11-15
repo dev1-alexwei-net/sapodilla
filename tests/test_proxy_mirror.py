@@ -5,9 +5,9 @@ This exercises the full mirror path: NGINX mirror directive fires a
 side request to the sidecar for every proxied Ollama request, and the
 sidecar records it. We verify via /api/usage.
 """
+
 from __future__ import annotations
 
-import pytest
 import requests
 
 
@@ -23,14 +23,14 @@ def test_mirror_fires_to_sidecar(compose_stack: dict) -> None:
     for i in range(4):
         r = requests.post(
             f"{nginx}/api/generate",
-            json={"model": f"mirror-model-{i}", "prompt": f"p{i}",
-                  "stream": False},
+            json={"model": f"mirror-model-{i}", "prompt": f"p{i}", "stream": False},
             timeout=15,
         )
         assert r.status_code == 200, f"request {i} failed: {r.status_code}"
 
     # Give the mirror subrequests a moment to land
     import time
+
     deadline = time.monotonic() + 10
     after = requests.get(f"{sidecar}/api/usage").json()
     while after["total_requests"] < before_total + 4 and time.monotonic() < deadline:
@@ -54,6 +54,7 @@ def test_mirror_records_model(compose_stack: dict) -> None:
         timeout=15,
     )
     import time
+
     deadline = time.monotonic() + 10
     found = False
     while time.monotonic() < deadline and not found:

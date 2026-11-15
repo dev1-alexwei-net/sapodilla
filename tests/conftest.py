@@ -10,10 +10,9 @@ Three test layers:
 
 The compose fixture is session-scoped: start once, tear down once.
 """
+
 from __future__ import annotations
 
-import json
-import os
 import subprocess
 import time
 import urllib.request
@@ -27,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 # Sidecar (unit) fixture
 # ---------------------------------------------------------------------------
+
 
 def _wait_http(url: str, timeout: float = 15.0) -> None:
     """Poll `url` until it returns 200 or timeout elapses."""
@@ -47,6 +47,7 @@ def _wait_http(url: str, timeout: float = 15.0) -> None:
 def sidecar_port() -> int:
     """Pick a free port for the sidecar."""
     import socket
+
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -62,7 +63,9 @@ def sidecar(sidecar_port: int):
     bin_path.parent.mkdir(parents=True, exist_ok=True)
     build = subprocess.run(
         ["go", "build", "-o", str(bin_path), "."],
-        cwd=REPO_ROOT, capture_output=True, text=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
     )
     if build.returncode != 0:
         raise RuntimeError(f"go build failed: {build.stderr}")
@@ -90,10 +93,14 @@ def sidecar(sidecar_port: int):
 # Compose (integration) fixture
 # ---------------------------------------------------------------------------
 
+
 def _compose(*args: str, timeout: int = 300) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "compose", *args],
-        cwd=REPO_ROOT, capture_output=True, text=True, timeout=timeout,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -107,9 +114,21 @@ def compose_stack():
     # instead of the real ollama image.
     override = REPO_ROOT / "tests" / "mock_upstream" / "docker-compose.override.yml"
     subprocess.run(
-        ["docker", "compose", "-f", "docker-compose.yml",
-         "-f", str(override), "up", "-d", "--build"],
-        cwd=REPO_ROOT, capture_output=True, text=True, timeout=600,
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.yml",
+            "-f",
+            str(override),
+            "up",
+            "-d",
+            "--build",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
         check=True,
     )
     # Wait for nginx to be up
@@ -124,9 +143,21 @@ def compose_stack():
     finally:
         try:
             subprocess.run(
-                ["docker", "compose", "-f", "docker-compose.yml",
-                 "-f", str(override), "down", "-v", "--remove-orphans"],
-                cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+                [
+                    "docker",
+                    "compose",
+                    "-f",
+                    "docker-compose.yml",
+                    "-f",
+                    str(override),
+                    "down",
+                    "-v",
+                    "--remove-orphans",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
         except Exception:
             pass
@@ -136,8 +167,10 @@ def compose_stack():
 # HTTP helpers (requests-based, shared across tests)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def http():
     import requests
+
     s = requests.Session()
     yield s

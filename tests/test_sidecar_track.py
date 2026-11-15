@@ -3,18 +3,17 @@
 Unit tests: hit the sidecar's /track endpoint directly with various
 payloads and assert that /api/usage reflects the change.
 """
+
 from __future__ import annotations
 
-import json
 import time
 
-import pytest
 import requests
-
 
 # ---------------------------------------------------------------------------
 # SC3: total_requests increments per /track call
 # ---------------------------------------------------------------------------
+
 
 def test_track_increments_total(sidecar: str) -> None:
     base = sidecar
@@ -37,15 +36,14 @@ def test_track_increments_total(sidecar: str) -> None:
 # SC6: endpoints count per URI
 # ---------------------------------------------------------------------------
 
+
 def test_track_counts_endpoints(sidecar: str) -> None:
     base = sidecar
     # 3 requests to /api/generate, 2 to /api/chat
     for _ in range(3):
-        requests.post(f"{base}/track",
-                      json={"model": "m1", "endpoint": "/api/generate"})
+        requests.post(f"{base}/track", json={"model": "m1", "endpoint": "/api/generate"})
     for _ in range(2):
-        requests.post(f"{base}/track",
-                      json={"model": "m1", "endpoint": "/api/chat"})
+        requests.post(f"{base}/track", json={"model": "m1", "endpoint": "/api/chat"})
 
     after = requests.get(f"{base}/api/usage").json()
     eps = after["endpoints"]
@@ -57,11 +55,11 @@ def test_track_counts_endpoints(sidecar: str) -> None:
 # SC4: last_request_at reflects most recent request (within tolerance)
 # ---------------------------------------------------------------------------
 
+
 def test_track_updates_last_request_at(sidecar: str) -> None:
     base = sidecar
     t0 = time.time()
-    requests.post(f"{base}/track",
-                  json={"model": "m1", "endpoint": "/api/generate"})
+    requests.post(f"{base}/track", json={"model": "m1", "endpoint": "/api/generate"})
 
     after = requests.get(f"{base}/api/usage").json()
     last = after["last_request_at"]
@@ -74,11 +72,11 @@ def test_track_updates_last_request_at(sidecar: str) -> None:
 # SC5: idle_for_seconds grows after quiescence
 # ---------------------------------------------------------------------------
 
+
 def test_track_idle_grows(sidecar: str) -> None:
     base = sidecar
     # Make a request
-    requests.post(f"{base}/track",
-                  json={"model": "m1", "endpoint": "/api/generate"})
+    requests.post(f"{base}/track", json={"model": "m1", "endpoint": "/api/generate"})
     after_immediate = requests.get(f"{base}/api/usage").json()
     idle_immediate = after_immediate["idle_for_seconds"]
     assert idle_immediate < 5, f"idle should be small right after request: {idle_immediate}"
@@ -94,23 +92,24 @@ def test_track_idle_grows(sidecar: str) -> None:
 # SC7: recent list contains last N entries in order
 # ---------------------------------------------------------------------------
 
+
 def test_track_recent_order(sidecar: str) -> None:
     base = sidecar
     markers = ["A", "B", "C", "D"]
     for m in markers:
-        requests.post(f"{base}/track",
-                      json={"model": f"model-{m}", "endpoint": "/api/generate"})
+        requests.post(f"{base}/track", json={"model": f"model-{m}", "endpoint": "/api/generate"})
 
     after = requests.get(f"{base}/api/usage").json()
     recent = after["recent"]
     # The last 4 entries should be our markers in order
-    tail = recent[-len(markers):]
+    tail = recent[-len(markers) :]
     assert [e["model"] for e in tail] == markers
 
 
 # ---------------------------------------------------------------------------
 # /track rejects bad input
 # ---------------------------------------------------------------------------
+
 
 def test_track_rejects_missing_model(sidecar: str) -> None:
     base = sidecar

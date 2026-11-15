@@ -28,10 +28,15 @@ select = [
 ignore = [
     "S101",  # assert in tests is fine
     "E501",  # line length handled by formatter
+    "S104",  # 0.0.0.0 binding is intentional for mock servers / test fixtures
+    "S113",  # requests in tests target local fixtures; timeouts would slow tests
+    "S310",  # urllib.request.urlopen targets local test fixtures
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S603", "S607", "S110", "SIM105", "N806"]
+"mock-ollama/**" = ["S603", "S607", "S110", "SIM105"]
+"scripts/**" = ["S603", "S607", "S110", "SIM105"]
 
 [tool.ruff.format]
 quote-style = "double"

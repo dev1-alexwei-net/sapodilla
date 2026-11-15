@@ -5,11 +5,11 @@ and return the SSE (text/event-stream) response unchanged. We parse the
 SSE stream and assert the chunks arrive in order and the final `done`
 marker is present.
 """
+
 from __future__ import annotations
 
 import json
 
-import pytest
 import requests
 
 
@@ -24,7 +24,7 @@ def _parse_sse(stream) -> list[dict]:
         if not line:
             continue
         if line.startswith("data: "):
-            buffer += line[len("data: "):]
+            buffer += line[len("data: ") :]
             # SSE: data may be split across multiple `data:` lines,
             # but for our mock it's a single line per event
             # We flush on the blank line (which `iter_lines` skips)
@@ -44,8 +44,7 @@ def test_proxy_generate_sse(compose_stack: dict) -> None:
         "prompt": "hello",
         "stream": True,
     }
-    with requests.post(f"{nginx}/api/generate", json=payload,
-                       stream=True, timeout=30) as r:
+    with requests.post(f"{nginx}/api/generate", json=payload, stream=True, timeout=30) as r:
         assert r.status_code == 200
         ctype = r.headers.get("Content-Type", "")
         assert "text/event-stream" in ctype, f"expected SSE, got {ctype}"
@@ -68,8 +67,7 @@ def test_proxy_generate_model_echo(compose_stack: dict) -> None:
     """The mock upstream echoes the model name back in each SSE event."""
     nginx = compose_stack["nginx"]
     payload = {"model": "mistral:7b", "prompt": "hi", "stream": True}
-    with requests.post(f"{nginx}/api/generate", json=payload,
-                       stream=True, timeout=30) as r:
+    with requests.post(f"{nginx}/api/generate", json=payload, stream=True, timeout=30) as r:
         assert r.status_code == 200
         # Just check the stream is well-formed; the mock echoes model
         # but we don't strictly require it here.

@@ -7,11 +7,11 @@ Implements the two endpoints the test suite exercises:
 Pure stdlib (http.server) so no extra deps. Runs on a configurable
 port, defaults to 11434 (to match Ollama's real port in compose).
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,10 +26,16 @@ class MockOllamaHandler(BaseHTTPRequestHandler):
         if self.path == "/api/tags":
             payload = {
                 "models": [
-                    {"name": "llama3:70b", "size": 3944241908,
-                     "modified_at": "2025-01-01T00:00:00Z"},
-                    {"name": "mistral:7b", "size": 4112519553,
-                     "modified_at": "2025-01-01T00:00:00Z"},
+                    {
+                        "name": "llama3:70b",
+                        "size": 3944241908,
+                        "modified_at": "2025-01-01T00:00:00Z",
+                    },
+                    {
+                        "name": "mistral:7b",
+                        "size": 4112519553,
+                        "modified_at": "2025-01-01T00:00:00Z",
+                    },
                 ]
             }
             body = json.dumps(payload).encode("utf-8")
@@ -64,11 +70,6 @@ class MockOllamaHandler(BaseHTTPRequestHandler):
 
         # Parse the model name so we can echo it back (tests may assert)
         model = "llama3:70b"
-        if length:
-            try:
-                raw = self.rfile.read(0)  # already consumed; ignore
-            except Exception:
-                pass
 
         # Respond with SSE
         self.send_response(200)
@@ -77,37 +78,49 @@ class MockOllamaHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         def sse(payload: dict) -> bytes:
-            return f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+            return f"data: {json.dumps(payload)}\n\n".encode()
 
         # Chunk 1
-        self.wfile.write(sse({
-            "model": model,
-            "created_at": "2025-01-01T00:00:00Z",
-            "response": "Hello",
-            "done": False,
-        }))
+        self.wfile.write(
+            sse(
+                {
+                    "model": model,
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "response": "Hello",
+                    "done": False,
+                }
+            )
+        )
         self.wfile.flush()
         time.sleep(0.05)
         # Chunk 2
-        self.wfile.write(sse({
-            "model": model,
-            "created_at": "2025-01-01T00:00:00Z",
-            "response": " world",
-            "done": False,
-        }))
+        self.wfile.write(
+            sse(
+                {
+                    "model": model,
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "response": " world",
+                    "done": False,
+                }
+            )
+        )
         self.wfile.flush()
         time.sleep(0.05)
         # Done marker
-        self.wfile.write(sse({
-            "model": model,
-            "created_at": "2025-01-01T00:00:00Z",
-            "response": "",
-            "done": True,
-            "total_duration": 100_000_000,
-            "load_duration": 1_000_000,
-            "prompt_eval_count": 10,
-            "eval_count": 5,
-        }))
+        self.wfile.write(
+            sse(
+                {
+                    "model": model,
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "response": "",
+                    "done": True,
+                    "total_duration": 100_000_000,
+                    "load_duration": 1_000_000,
+                    "prompt_eval_count": 10,
+                    "eval_count": 5,
+                }
+            )
+        )
         self.wfile.flush()
 
 
