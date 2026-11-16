@@ -9,18 +9,13 @@ from __future__ import annotations
 import requests
 
 
-def test_mirror_fires_to_sidecar(proxy: str) -> None:
-    # Read sidecar usage via the sidecar's /api/usage — but the proxy
-    # fixture only gives us the nginx URL. We need the sidecar URL too.
-    # The sidecar is exposed on port 9090 in the compose stack.
-    sidecar_base = "http://127.0.0.1:9090"
-
-    before = requests.get(f"{sidecar_base}/api/usage", timeout=5).json()
+def test_mirror_fires_to_sidecar(proxy: str, compose_sidecar: str) -> None:
+    before = requests.get(f"{compose_sidecar}/api/usage", timeout=5).json()
     before_total = before["total"]
 
     # Send 3 requests through the proxy
     for _ in range(3):
         requests.get(f"{proxy}/api/ping", timeout=10)
 
-    after = requests.get(f"{sidecar_base}/api/usage", timeout=5).json()
+    after = requests.get(f"{compose_sidecar}/api/usage", timeout=5).json()
     assert after["total"] >= before_total + 3

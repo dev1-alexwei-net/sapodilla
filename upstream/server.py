@@ -16,12 +16,13 @@ service, any HTTP endpoint). This server only exists to exercise the
 proxy + sidecar in CI and local smoke tests.
 
 Run locally:
-    python3 server.py 9090   # or any port; default 11434 for compatibility
+    PORT=9090 python3 server.py  # or pass a port argument; default 11434
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -107,7 +108,7 @@ class UpstreamHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 11434
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", "11434"))
     ThreadingHTTPServer(("0.0.0.0", port), UpstreamHandler).serve_forever()
 
 

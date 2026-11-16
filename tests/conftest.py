@@ -25,6 +25,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture
+def compose() -> str:
+    """Return the Compose file for lightweight configuration assertions."""
+    return (REPO_ROOT / "docker-compose.yml").read_text()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -52,13 +58,18 @@ def _pick_free_port() -> int:
     return port
 
 
-def _compose(*args: str, timeout: int = 300) -> subprocess.CompletedProcess:
+def _compose(
+    *args: str,
+    timeout: int = 300,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "compose", *args],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=env,
     )
 
 
@@ -71,6 +82,7 @@ def _compose(*args: str, timeout: int = 300) -> subprocess.CompletedProcess:
 def sidecar() -> str:
     """Build and start the Go sidecar on a random port; yield its base URL."""
     port = _pick_free_port()
+    env_addr_port = _pick_free_port()
     bin_path = REPO_ROOT / "build" / "sidecar"
     bin_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -83,8 +95,12 @@ def sidecar() -> str:
     if build.returncode != 0:
         raise RuntimeError(f"go build failed: {build.stderr}")
 
+    env = os.environ.copy()
+    # Prove an explicit -addr flag takes precedence over ADDR.
+    env["ADDR"] = f"127.0.0.1:{env_addr_port}"
     proc = subprocess.Popen(
         [str(bin_path), "-addr", f"127.0.0.1:{port}"],
+        env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -107,11 +123,27 @@ def sidecar() -> str:
 
 
 @pytest.fixture(scope="session")
-def proxy() -> str:
+def compose_ports() -> dict[str, int]:
+    """Choose non-default ports to exercise Compose variable overrides."""
+    proxy_port = _pick_free_port()
+    sidecar_port = _pick_free_port()
+    upstream_port = _pick_free_port()
+    return {
+        "LISTEN_PORT": proxy_port,
+        "SIDECAR_PORT": sidecar_port,
+        "UPSTREAM_PORT": upstream_port,
+    }
+
+
+@pytest.fixture(scope="session")
+def proxy(compose_ports: dict[str, int]) -> str:
     """Start the docker compose stack; yield the NGINX front-door base URL."""
     compose_file = REPO_ROOT / "docker-compose.yml"
     if not compose_file.exists():
         pytest.skip("docker-compose.yml not found")
+
+    compose_env = os.environ.copy()
+    compose_env.update({k: str(v) for k, v in compose_ports.items()})
 
     result = _compose(
         "-f",
@@ -119,17 +151,23 @@ def proxy() -> str:
         "up",
         "-d",
         "--build",
+        env=compose_env,
     )
     if result.returncode != 0:
-        _compose("-f", str(compose_file), "down", "--volumes", "-t", "3")
+        _compose("-f", str(compose_file), "down", "--volumes", "-t", "3", env=compose_env)
         raise RuntimeError(
             f"docker compose up failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
-    env_port = int(os.environ.get("TEST_PROXY_PORT", "8080"))
-    base = f"http://127.0.0.1:{env_port}"
+    base = f"http://127.0.0.1:{compose_ports['LISTEN_PORT']}"
     _wait_http(f"{base}/api/ping")
     try:
         yield base
     finally:
-        _compose("-f", str(compose_file), "down", "-v", "-t", "3")
+        _compose("-f", str(compose_file), "down", "-v", "-t", "3", env=compose_env)
+
+
+@pytest.fixture(scope="session")
+def compose_sidecar(proxy: str, compose_ports: dict[str, int]) -> str:
+    """Return the sidecar API URL after the integration stack is ready."""
+    return f"http://127.0.0.1:{compose_ports['SIDECAR_PORT']}"

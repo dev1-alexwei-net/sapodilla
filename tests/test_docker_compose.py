@@ -12,20 +12,18 @@ class TestDockerCompose:
         assert "sidecar" in compose
         assert "upstream" in compose
 
-    def test_docker_compose_ports(self, compose: str) -> None:
-        # nginx listens on 8080; upstream (generic mock) on 11434.
-        assert "8080:8080" in compose
-        assert "11434" in compose
+    def test_docker_compose_ports_are_configurable(self, compose: str) -> None:
+        assert "${LISTEN_PORT:-8080}" in compose
+        assert "${SIDECAR_PORT:-9090}" in compose
+        assert "${UPSTREAM_PORT:-11434}" in compose
 
-    def test_docker_compose_upstream_var(self, compose: str) -> None:
-        """The upstream is configurable via the UPSTREAM env var."""
-        assert "UPSTREAM" in compose
+    def test_docker_compose_hosts_are_configurable(self, compose: str) -> None:
+        for name in ("LISTEN_HOST", "UPSTREAM_HOST", "SIDECAR_HOST"):
+            assert name in compose
 
-    def test_docker_compose_sidecar_exposes_no_public_port(self, compose: str) -> None:
-        # The sidecar should not be exposed publicly; only reachable on the
-        # internal mirror network.
-        sidecar_section = compose.split("sidecar:", 1)[1].split("upstream:", 1)[0]
-        assert "ports:" not in sidecar_section
+    def test_docker_compose_sidecar_port_is_loopback_only(self, compose: str) -> None:
+        # The sidecar API is available on localhost, not on all host interfaces.
+        assert '"127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"' in compose
 
     def test_docker_compose_sidecar_data_persists(self, compose: str) -> None:
         """The sidecar's counter state survives restarts via a named volume."""

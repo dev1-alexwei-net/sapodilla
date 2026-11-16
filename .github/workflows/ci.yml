@@ -78,6 +78,10 @@ jobs:
   smoke:
     name: Smoke test (Docker Compose)
     runs-on: ubuntu-latest
+    env:
+      LISTEN_PORT: "18080"
+      SIDECAR_PORT: "19090"
+      UPSTREAM_PORT: "11435"
     needs: [go-test, docker-build]
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +94,7 @@ jobs:
       - name: Wait for sidecar
         run: |
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:9090/api/healthz >/dev/null 2>&1; then
+            if curl -fsS "http://localhost:${SIDECAR_PORT}/api/healthz" >/dev/null 2>&1; then
               echo "Sidecar ready after ${i}s"
               break
             fi
@@ -105,7 +109,7 @@ jobs:
       - name: Wait for proxy (backend ready)
         run: |
           for i in $(seq 1 90); do
-            if curl -sf http://localhost:8080/api/ping 2>/dev/null | python3 -m json.tool >/dev/null 2>&1; then
+            if curl -sf "http://localhost:${LISTEN_PORT}/api/ping" 2>/dev/null | python3 -m json.tool >/dev/null 2>&1; then
               echo "Proxy + backend ready after ${i}s"
               break
             fi
@@ -120,17 +124,17 @@ jobs:
       - name: Health check
         run: |
           echo "=== Sidecar healthz ==="
-          curl -sf http://localhost:9090/api/healthz
+          curl -sf "http://localhost:${SIDECAR_PORT}/api/healthz"
           echo ""
           echo "=== Proxy reachable ==="
-          curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8080/
+          curl -s -o /dev/null -w 'HTTP %{http_code}\n' "http://localhost:${LISTEN_PORT}/"
           echo ""
 
       - name: Ping passthrough
         run: |
           echo "=== Ping via proxy ==="
           for i in $(seq 1 10); do
-            if curl -sf http://localhost:8080/api/ping | python3 -m json.tool; then
+            if curl -sf "http://localhost:${LISTEN_PORT}/api/ping" | python3 -m json.tool; then
               exit 0
             fi
             echo "Retry $i/10..."
@@ -142,13 +146,13 @@ jobs:
       - name: Usage endpoint
         run: |
           echo "=== Usage via sidecar ==="
-          curl -sf http://localhost:9090/api/usage | python3 -m json.tool
+          curl -sf "http://localhost:${SIDECAR_PORT}/api/usage" | python3 -m json.tool
           echo ""
 
       - name: Make a tracked request
         run: |
           echo "=== Making a request ==="
-          curl -sf http://localhost:8080/echo \
+          curl -sf "http://localhost:${LISTEN_PORT}/echo" \
             -H 'Content-Type: application/json' \
             -d '{"hello": "world"}' | python3 -m json.tool
           echo ""
@@ -156,10 +160,10 @@ jobs:
       - name: Verify tracking
         run: |
           echo "=== Usage after request (via sidecar) ==="
-          curl -sf http://localhost:9090/api/usage | python3 -m json.tool
+          curl -sf "http://localhost:${SIDECAR_PORT}/api/usage" | python3 -m json.tool
           echo ""
           echo "=== Checking total > 0 ==="
-          total=$(curl -sf http://localhost:9090/api/usage | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")
+          total=$(curl -sf "http://localhost:${SIDECAR_PORT}/api/usage" | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")
           if [ "$total" -gt 0 ]; then
             echo "PASS: total=$total"
           else

@@ -1,6 +1,6 @@
 # Dockerfile for the NGINX front-end.
 # Based on nginx:alpine for small image size.
-# The ollama-mirror.conf is baked into the image at build time.
+# NGINX settings are rendered from the template at container startup.
 
 FROM nginx:1.27-alpine AS final
 
@@ -9,18 +9,22 @@ RUN rm /etc/nginx/conf.d/default.conf
 
 # Copy our config as a template. The nginx:alpine entrypoint runs
 # envsubst on files in /etc/nginx/templates/ and writes the result
-# to /etc/nginx/conf.d/ — this lets us use $UPSTREAM from the
-# environment without nginx's (unsupported) variable syntax in
-# upstream blocks.
+# to /etc/nginx/conf.d/ without substituting NGINX's own variables.
 COPY ollama-mirror.conf /etc/nginx/templates/ollama-mirror.conf.template
 
-# Restrict envsubst to only substitute $UPSTREAM so nginx
-# variables like $host, $remote_addr are left intact.
-ENV NGINX_ENVSUBST_FILTER='UPSTREAM'
+# Restrict envsubst to the supported configuration variables so NGINX
+# variables like $host and $remote_addr remain intact.
+ENV LISTEN_PORT=8080 \
+    UPSTREAM_HOST=upstream \
+    UPSTREAM_PORT=11434 \
+    SIDECAR_HOST=sidecar \
+    SIDECAR_PORT=9090 \
+    NGINX_ENVSUBST_FILTER='^(LISTEN_PORT|UPSTREAM_HOST|UPSTREAM_PORT|SIDECAR_HOST|SIDECAR_PORT)$'
 
-# Health check
+# Check the process/config, without assuming the upstream implements a
+# particular health endpoint.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
-    CMD wget -q -O - http://localhost:8080/healthz || exit 1
+    CMD nginx -t && kill -0 1
 
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]

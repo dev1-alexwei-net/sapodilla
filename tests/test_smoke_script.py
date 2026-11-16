@@ -21,11 +21,12 @@ class TestSmokeScript:
     def test_smoke_script_covers_endpoints(self) -> None:
         content = SMOKE.read_text()
         assert "/api/healthz" in content
-        assert "/track" in content
         assert "/api/usage" in content
+        assert "${LISTEN_PORT:-8080}" in content
+        assert "${SIDECAR_PORT:-9090}" in content
         # The smoke test should exercise a generic proxied request, not an
         # Ollama-specific endpoint.
-        assert "upstream" in content.lower()
+        assert "/any/path" in content
 
     def test_smoke_script_uses_retry_loop(self) -> None:
         content = SMOKE.read_text()

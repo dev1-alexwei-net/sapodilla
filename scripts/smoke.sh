@@ -13,9 +13,8 @@
 
 set -euo pipefail
 
-BASE="${BASE:-http://localhost:8080}"
-SIDE="${SIDE:-http://localhost:9090}"
-UP="${UPSTREAM:-http://localhost:11434}"
+BASE="${BASE:-http://localhost:${LISTEN_PORT:-8080}}"
+SIDE="${SIDE:-http://localhost:${SIDECAR_PORT:-9090}}"
 
 step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
 
@@ -48,8 +47,8 @@ step "4. Usage after mirrored request"
 sleep 1
 curl -fsS "$SIDE/api/usage" | python3 -m json.tool
 
-step "5. Direct request to the upstream (also mirrored by the proxy path)"
-curl -fsS "$UP/healthz" >/dev/null
+step "5. Another request through the generic proxy"
+curl -fsS "$BASE/healthz" >/dev/null
 sleep 1
 step "6. Final usage (total should be >= 2, last_seen recent)"
 curl -fsS "$SIDE/api/usage" | python3 -m json.tool

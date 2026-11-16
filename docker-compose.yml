@@ -1,8 +1,7 @@
 # Generic web-API usage tracker.
 #
-# Any HTTP/HTTPS endpoint can be used as the upstream: the mirror proxies
-# every request to it and the sidecar counts them. Set UPSTREAM to point at
-# your real API (e.g. http://ollama:11434, http://myapp:8080, ...).
+# Point UPSTREAM_HOST and UPSTREAM_PORT at any HTTP service reachable from
+# the mirror network. The bundled upstream is a generic mock for local use.
 #
 # The bundled `upstream` service is a generic mock that echoes requests back
 # as JSON, so the whole stack can run with no external dependency.
@@ -12,10 +11,13 @@ services:
     build:
       context: ./nginx
     ports:
-      - "${NGINX_BIND:-0.0.0.0}:8080:8080"
+      - "${LISTEN_HOST:-0.0.0.0}:${LISTEN_PORT:-8080}:${LISTEN_PORT:-8080}"
     environment:
-      # Upstream = the API the mirror fronts. Default is the generic mock.
-      UPSTREAM: "${UPSTREAM:-upstream:11434}"
+      LISTEN_PORT: "${LISTEN_PORT:-8080}"
+      UPSTREAM_HOST: "${UPSTREAM_HOST:-upstream}"
+      UPSTREAM_PORT: "${UPSTREAM_PORT:-11434}"
+      SIDECAR_HOST: "${SIDECAR_HOST:-sidecar}"
+      SIDECAR_PORT: "${SIDECAR_PORT:-9090}"
     depends_on:
       sidecar:
         condition: service_healthy
@@ -29,28 +31,32 @@ services:
     build:
       context: ./sidecar
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"
     environment:
       STATE_DIR: "/data"
+      SIDECAR_PORT: "${SIDECAR_PORT:-9090}"
+      ADDR: "${ADDR:-:${SIDECAR_PORT:-9090}}"
     volumes:
       - sidecar-data:/data
     networks:
       - mirror
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/api/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${SIDECAR_PORT}/api/healthz"]
       interval: 5s
       timeout: 2s
       retries: 5
       start_period: 3s
 
   # Generic mock upstream (echoes requests). Replace with a real API in
-  # production by dropping this service and setting UPSTREAM.
+  # production can point NGINX at another service with UPSTREAM_HOST/PORT.
   upstream:
     build:
       context: ./upstream
     expose:
-      - "11434"
+      - "${UPSTREAM_PORT:-11434}"
+    environment:
+      PORT: "${UPSTREAM_PORT:-11434}"
     networks:
       - mirror
     restart: unless-stopped
