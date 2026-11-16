@@ -1,88 +1,85 @@
 # Architecture
 
-## Goal
+## Purpose
 
-A lightweight pass-through proxy that tracks **service usage metadata** (who hit what, when) so we can answer: **"has this service had no users recently?"**
-
-The proxy is not the source of truth for the application. It sits in front, forwards everything, and quietly records a lightweight trail of requests. Usage is exposed via a small REST API on the same front-door port.
-
-## Design decisions
-
-| Decision | Choice | Why |
-|---|---|---|
-| Pass-through | **NGINX** | Mature, lightweight, no application code in the data path. `mirror` directive fires a copy of each request to a sidecar for tracking. |
-| Tracker backend | **Go** | Single static binary, tiny image, fast. In-memory state only (no DB) — this is a metadata signal, not a system of record. |
-| Trigger | **On request** (not on response completion) | "When has the service had no users?" is answered by request count + last-seen timestamp. Response bytes/duration would require the Go service to be the pass-through itself (heavier, out of scope). |
-| State | **In-memory ring buffer** | Restart resets counters. Acceptable for a "has anyone been using this?" signal. |
-| Test stack | **uv + pyproject + pytest** | Fast, pinned, portable. Tests are the first-class artifact (TDD). |
+The service is a generic HTTP reverse proxy with a small usage counter. NGINX
+forwards requests to an upstream API and mirrors a request to a Go sidecar.
+The sidecar records that a request occurred; it does not parse request content
+or store request details as usage state. Its access log includes the HTTP
+method and path.
 
 ## Components
 
-### 1. NGINX proxy (the "proxy" image)
+### NGINX proxy
 
-- Listens on `:8080` (configurable via `LISTEN_PORT`).
-- `location /` → `proxy_pass http://upstream;` where `upstream` is the target service (Ollama on `:11434`, or any other service).
-- `mirror http://sidecar:9090/track;` — fires a **metadata-only copy** of each request to the Go sidecar. No request body (`mirror_request_body off`), no response copy. This is the usage signal.
-- `location = /api/usage` → `proxy_pass http://sidecar:9090/api/usage;` — read-only passthrough to the sidecar's usage API.
-- `location = /api/healthz` → `proxy_pass http://sidecar:9090/api/healthz;` — composite health (proxy ok + upstream reachable).
-- Streaming-friendly: `proxy_buffering off`, `proxy_read_timeout 300s`, `proxy_http_version 1.1`, `proxy_set_header Connection ""`.
-- **Ollama-safe**: SSE (`/api/generate`, `/api/chat`) works because buffering is off and we never touch the body.
+- Forwards every path and HTTP method to the configured upstream.
+- Mirrors each proxied request to the sidecar's internal `/track` endpoint.
+- Disables request-body mirroring and response buffering, preserving generic
+  request forwarding and streaming responses.
+- Uses the standard NGINX mirror subrequest: failure to record usage does not
+  replace the upstream response.
 
-### 2. Go sidecar (usage tracker)
+### Go sidecar
 
-Single binary, no external deps (stdlib only). Ports: `:9090` (internal).
+The sidecar uses only the Go standard library. Its concurrency-safe in-memory
+state contains exactly:
 
-**State** (in-memory, mutex-guarded):
-- `total_requests int64` — cumulative count.
-- `last_request_at *time.Time` — when the most recent request was seen.
-- `endpoints map[string]int64` — per-URI counts.
-- `recent []Entry` — ring buffer of the last `HISTORY_LEN` (default 200) entries: `{ts, method, uri, client_ip}`.
+- `total`: cumulative number of mirrored requests.
+- `last_seen`: timestamp of the most recent request, or `null` before the
+  first request.
 
-**Endpoints**:
-- `POST /track` — receives mirrored requests. Updates state. Returns `204 No Content`. (Called by NGINX `mirror`, never by clients.)
-- `GET /api/usage` — returns:
-  ```json
-  {
-    "total_requests": 1234,
-    "last_request_at": "2026-11-15T18:00:00Z",
-    "idle_for_seconds": 742,
-    "endpoints": { "/api/tags": 500, "/api/generate": 734 },
-    "recent": [ { "ts": "...", "method": "GET", "uri": "/api/tags", "client_ip": "10.0.0.5" } ]
-  }
-  ```
-  `idle_for_seconds` is the key "no users" signal: seconds since the last request.
-- `GET /api/healthz` — returns `{ "proxy": "ok", "upstream": "online|offline" }`. Pokes `UPSTREAM_HEALTH_URL` (default `http://upstream:11434/api/tags`) with a short timeout.
+Its endpoints are:
 
-**Config via env**: `PORT` (default `9090`), `HISTORY_LEN` (default `200`), `UPSTREAM_HEALTH_URL` (default `http://127.0.0.1:11434/api/tags`), `UPSTREAM_HEALTH_TIMEOUT_MS` (default `2000`).
+- `POST /track` — called by NGINX; records one request and returns a small
+  acknowledgement. Request content is ignored.
+- `GET /api/usage` — returns `{ "total": number, "last_seen": timestamp|null }`.
+- `GET /api/healthz` — reports sidecar liveness.
 
-### 3. Docker Compose (test scaffolding)
+The API is served by the sidecar, not by a special NGINX route. In the Compose
+setup, the sidecar API is published on loopback for local inspection and is
+also reachable to NGINX over the internal network.
 
-Three services:
-- `upstream` — the service being tracked. For testing, a small **mock upstream** (Python/uv) that mimics Ollama's shape: `GET /api/tags` returns a fixed JSON, `POST /api/generate` returns an SSE stream. This keeps tests hermetic (no real Ollama needed). A second compose profile (`ollama`) can swap in a real Ollama image.
-- `sidecar` — Go binary, built from `sidecar/Dockerfile`. Internal port `9090`. Depends on nothing (stateless w.r.t. upstream).
-- `proxy` — NGINX, built from `nginx/Dockerfile` (base `nginx:1.27-alpine` + our conf). Exposes `8080`. Depends on `upstream` + `sidecar`.
+State is not persisted. Restarting the sidecar resets `total` and `last_seen`.
 
-`docker compose up` → clients talk to `:8080` → NGINX mirrors to sidecar → NGINX forwards to upstream. Single front door.
+### Docker Compose
 
-## Data flow (per request)
+Compose runs three services:
 
+- `nginx` — the client-facing proxy.
+- `sidecar` — the usage counter and inspection API.
+- `upstream` — a generic echo service for local development and smoke tests.
+
+The upstream mock can be replaced by any HTTP service reachable from the
+mirror network. Deployment variables and direct `docker run` examples are
+documented in the [README](README.md).
+
+## Request flow
+
+```mermaid
+flowchart LR
+    Client -->|any method, path, query, body| NGINX
+    NGINX -->|original request| Upstream
+    NGINX -.->|metadata-only mirror| Track[Sidecar /track]
+    Track -->|increment total, update last_seen| State[(In-memory state)]
+    Operator -->|GET /api/usage| Sidecar
+    Sidecar --> State
 ```
-client ──► NGINX :8080
-            ├──► (main)  upstream :11434   ──► response streams back to client
-            └──► (mirror) sidecar :9090/track  ──► updates in-memory state ──► 204
-```
 
-The mirror subrequest is fired **when the main request is sent** (not when it completes). For SSE responses this is fine: the counter increments at request start, which is exactly when a "user touched the service" event happens.
+The proxy's main request and the tracking subrequest are independent: the
+upstream receives the original request, while the sidecar only records its
+occurrence.
 
-## What we are NOT doing (scope boundary)
+## Design boundaries
 
-- **No response bytes or duration.** Would require the Go service to be the pass-through.
-- **No persistence.** In-memory only. Restart = counter reset.
-- **No authentication** on the sidecar. Internal port, compose-network only.
-- **No per-user identity** beyond client IP. Ollama is single-tenant local.
+- No Ollama-specific routes, model parsing, or endpoint classification.
+- No request/response body inspection by the tracker.
+- No per-endpoint, per-client, or per-model metrics.
+- No database or persistence; the counter is a lightweight usage signal, not
+  a system of record.
+- The sidecar is intended for a trusted internal network; it does not provide
+  authentication.
 
-## Threat / edge cases
+## Verification
 
-- **Sidecar down** → NGINX `mirror` failures are logged but do NOT block the main request. Pass-through still works. (Document + test.)
-- **Upstream down** → NGINX returns 502. Sidecar `last_request_at` still updates (a request was made). Healthz reports `upstream: offline`.
-- **SSE long streams** → `proxy_buffering off` + no body touch means no buffering pressure. Mirror fires at start, not at end.
+Go unit tests cover state, tracking, and response behavior. The Docker Compose
+smoke flow checks proxy passthrough and that a mirrored request updates usage.
