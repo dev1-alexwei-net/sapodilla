@@ -1,0 +1,14 @@
+.git
+.github
+.pytest_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+ollama-mirror/test
+test_*.py
+conftest.py
+*.md
+scripts
+pyproject.toml
+Dockerfile*
+compose.yaml

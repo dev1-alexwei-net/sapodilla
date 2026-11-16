@@ -34,7 +34,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S603", "S607", "S110", "SIM105", "N806"]
+"conftest.py" = ["S603", "S607", "S110", "SIM105", "N806"]
+"test_*.py" = ["S101", "S603", "S607", "S110", "SIM105", "N806"]
 "mock-ollama/**" = ["S603", "S607", "S110", "SIM105"]
 "scripts/**" = ["S603", "S607", "S110", "SIM105"]
 
@@ -42,5 +43,5 @@ ignore = [
 quote-style = "double"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["."]
 filterwarnings = ["ignore::UserWarning"]

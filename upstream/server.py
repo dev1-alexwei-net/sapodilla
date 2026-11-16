@@ -13,7 +13,7 @@ is configured to proxy to. For testing, it behaves generically:
 
 The real deployment points the mirror at a real API (Ollama, a custom
 service, any HTTP endpoint). This server only exists to exercise the
-proxy + sidecar in CI and local smoke tests.
+proxy + usage API in CI and local smoke tests.
 
 Run locally:
     PORT=9090 python3 server.py  # or pass a port argument; default 11434

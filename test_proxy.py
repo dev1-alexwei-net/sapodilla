@@ -20,9 +20,9 @@ class TestProxy:
         for _ in range(3):
             session["client"].get(f"{session['proxy']}/api/ping", timeout=10)
         assert (
-            session["client"].get(f"{session['sidecar']}/api/usage", timeout=5).json()["total"]
+            session["client"].get(f"{session['usage_api']}/api/usage", timeout=5).json()["total"]
             >= usage_before + 3
         )
 
-    def test_sidecar_port_is_loopback_only(self, session: Session) -> None:
-        assert '"127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"' in session["compose"]
+    def test_usage_api_port_is_loopback_only(self, session: Session) -> None:
+        assert '"127.0.0.1:${USAGE_API_PORT:-9090}:${USAGE_API_PORT:-9090}"' in session["compose"]

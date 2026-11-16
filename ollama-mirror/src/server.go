@@ -59,7 +59,7 @@ func main() {
 		<-stop
 		_ = srv.Shutdown(context.Background())
 	}()
-	log.Printf("sidecar listening on %s", *addr)
+	log.Printf("usage API listening on %s", *addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

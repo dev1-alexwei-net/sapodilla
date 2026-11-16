@@ -1,0 +1,63 @@
+# Generic web-API usage tracker.
+#
+# Point UPSTREAM_HOST and UPSTREAM_PORT at any HTTP service reachable from
+# the mirror network. The bundled echo-api service is a generic local mock.
+
+services:
+  mirror:
+    build:
+      context: .
+      dockerfile: Dockerfile.mirror
+    ports:
+      - "${LISTEN_HOST:-0.0.0.0}:${LISTEN_PORT:-8080}:${LISTEN_PORT:-8080}"
+    environment:
+      LISTEN_PORT: "${LISTEN_PORT:-8080}"
+      UPSTREAM_HOST: "${UPSTREAM_HOST:-echo-api}"
+      UPSTREAM_PORT: "${UPSTREAM_PORT:-11434}"
+      USAGE_API_HOST: "${USAGE_API_HOST:-usage-api}"
+      USAGE_API_PORT: "${USAGE_API_PORT:-9090}"
+    depends_on:
+      usage-api:
+        condition: service_healthy
+      echo-api:
+        condition: service_started
+    networks:
+      - mirror
+    restart: unless-stopped
+
+  usage-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.usage-api
+    ports:
+      - "127.0.0.1:${USAGE_API_PORT:-9090}:${USAGE_API_PORT:-9090}"
+    environment:
+      USAGE_API_PORT: "${USAGE_API_PORT:-9090}"
+      ADDR: "${ADDR:-:${USAGE_API_PORT:-9090}}"
+    networks:
+      - mirror
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${USAGE_API_PORT}/api/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+      start_period: 3s
+
+  # Generic mock upstream (echoes requests). For production, point NGINX at
+  # another service with UPSTREAM_HOST and UPSTREAM_PORT.
+  echo-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.echo-api
+    expose:
+      - "${UPSTREAM_PORT:-11434}"
+    environment:
+      PORT: "${UPSTREAM_PORT:-11434}"
+    networks:
+      - mirror
+    restart: unless-stopped
+
+networks:
+  mirror:
+    driver: bridge

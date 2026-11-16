@@ -10,16 +10,16 @@ RUN rm /etc/nginx/conf.d/default.conf
 # Copy our config as a template. The nginx:alpine entrypoint runs
 # envsubst on files in /etc/nginx/templates/ and writes the result
 # to /etc/nginx/conf.d/ without substituting NGINX's own variables.
-COPY ollama-mirror.conf /etc/nginx/templates/ollama-mirror.conf.template
+COPY nginx/ollama-mirror.conf /etc/nginx/templates/ollama-mirror.conf.template
 
 # Restrict envsubst to the supported configuration variables so NGINX
 # variables like $host and $remote_addr remain intact.
 ENV LISTEN_PORT=8080 \
-    UPSTREAM_HOST=upstream \
+    UPSTREAM_HOST=echo-api \
     UPSTREAM_PORT=11434 \
-    SIDECAR_HOST=sidecar \
-    SIDECAR_PORT=9090 \
-    NGINX_ENVSUBST_FILTER='^(LISTEN_PORT|UPSTREAM_HOST|UPSTREAM_PORT|SIDECAR_HOST|SIDECAR_PORT)$'
+    USAGE_API_HOST=usage-api \
+    USAGE_API_PORT=9090 \
+    NGINX_ENVSUBST_FILTER='^(LISTEN_PORT|UPSTREAM_HOST|UPSTREAM_PORT|USAGE_API_HOST|USAGE_API_PORT)$'
 
 # Check the process/config, without assuming the upstream implements a
 # particular health endpoint.

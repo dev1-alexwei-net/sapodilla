@@ -11,13 +11,13 @@ from typing import TypedDict
 import pytest
 import requests
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 
 
 class Session(TypedDict):
     client: requests.Session
     proxy: str
-    sidecar: str
+    usage_api: str
     compose: str
 
 
@@ -46,14 +46,14 @@ def _compose(env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
 
 @pytest.fixture(scope="session")
 def session():
-    ports = {name: _free_port() for name in ("LISTEN_PORT", "SIDECAR_PORT", "UPSTREAM_PORT")}
+    ports = {name: _free_port() for name in ("LISTEN_PORT", "USAGE_API_PORT", "UPSTREAM_PORT")}
     env = os.environ | {name: str(port) for name, port in ports.items()}
     client = requests.Session()
     deps: Session = {
         "client": client,
         "proxy": f"http://127.0.0.1:{ports['LISTEN_PORT']}",
-        "sidecar": f"http://127.0.0.1:{ports['SIDECAR_PORT']}",
-        "compose": (ROOT / "docker-compose.yml").read_text(),
+        "usage_api": f"http://127.0.0.1:{ports['USAGE_API_PORT']}",
+        "compose": (ROOT / "compose.yaml").read_text(),
     }
     try:
         result = _compose(env, "up", "-d", "--build")
@@ -67,4 +67,4 @@ def session():
 
 @pytest.fixture
 def usage_before(session: Session) -> int:
-    return session["client"].get(f"{session['sidecar']}/api/usage", timeout=5).json()["total"]
+    return session["client"].get(f"{session['usage_api']}/api/usage", timeout=5).json()["total"]
