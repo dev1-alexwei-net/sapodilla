@@ -23,14 +23,14 @@ jobs:
       - name: Download sonar-scanner-cli
         run: |
           curl -fsSL -o /tmp/sonar-scanner.zip \
-            "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.3.1.16491-linux-x64.zip"
-          python3 -m zipfile -e /tmp/sonar-scanner.zip /tmp/
-          mv /tmp/sonar-scanner-8.3.1.16491-linux-x64 /tmp/sonar-scanner
-          /tmp/sonar-scanner/sonar-scanner --version
+            "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux-x64.zip"
+          unzip -q /tmp/sonar-scanner.zip -d /tmp/
+          mv /tmp/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux-x64 /tmp/sonar-scanner
+          /tmp/sonar-scanner/bin/sonar-scanner --version
 
       - name: Run SonarCloud analysis
         run: |
-          /tmp/sonar-scanner/sonar-scanner \
+          /tmp/sonar-scanner/bin/sonar-scanner \
             -Dsonar.organization="${{ secrets.SONAR_ORG }}" \
             -Dsonar.projectKey="${{ secrets.SONAR_PROJECT_KEY }}" \
             -Dsonar.projectVersion="${GITHUB_SHA::8}" \
