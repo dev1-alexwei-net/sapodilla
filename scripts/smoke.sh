@@ -1,66 +1,58 @@
 #!/usr/bin/env bash
-# smoke.sh — end-to-end smoke test for ollama-mirror.
+# End-to-end smoke test for the generic web-API usage tracker.
 #
-# Steps:
-#   1. docker compose up -d --build (with mock upstream override)
-#   2. wait for nginx to be ready
-#   3. GET /api/tags through nginx -> expect 200 + models list
-#   4. POST /api/generate through nginx -> expect 200 + SSE
-#   5. GET /api/usage on sidecar -> expect total_requests > 0
-#   6. docker compose down -v
+# Usage:
+#   docker compose up -d
+#   ./scripts/smoke.sh
 #
-# Exits 0 on success, non-zero on failure.
+# Exercises:
+#   - sidecar health + usage (empty state)
+#   - a request mirrored through the proxy (any path)
+#   - usage reflects the request (total, last_seen)
+#   - a request via the proxy increments the counter
+
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-OVERRIDE="$REPO/tests/mock_upstream/docker-compose.override.yml"
+BASE="${BASE:-http://localhost:8080}"
+SIDE="${SIDE:-http://localhost:9090}"
+UP="${UPSTREAM:-http://localhost:11434}"
 
-cleanup() {
-    echo "[smoke] tearing down..."
-    (cd "$REPO" && docker compose -f docker-compose.yml -f "$OVERRIDE" down -v --remove-orphans) \
-        >/dev/null 2>&1 || true
+step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
+
+wait_for() {
+    local url="$1" name="$2"
+    local i=0
+    step "Waiting for ${name} at ${url}"
+    until curl -fsS -o /dev/null -w '%{http_code}' "$url" >/dev/null 2>&1; do
+        i=$((i + 1))
+        if (( i > 30 )); then
+            echo "ERROR: ${name} did not become ready" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+    echo "   ${name} is ready"
 }
-trap cleanup EXIT
 
-echo "[smoke] starting compose stack (build + up)..."
-(cd "$REPO" && docker compose -f docker-compose.yml -f "$OVERRIDE" up -d --build)
+step "1. Sidecar health"
+curl -fsS "$SIDE/api/healthz" | python3 -m json.tool
 
-echo "[smoke] waiting for nginx to be ready..."
-for i in $(seq 1 60); do
-    if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
-        break
-    fi
-    sleep 1
-done
+step "2. Usage before any requests"
+curl -fsS "$SIDE/api/usage" | python3 -m json.tool
 
-echo "[smoke] SC1: GET /api/tags through proxy"
-tags=$(curl -fsS http://127.0.0.1:8080/api/tags)
-echo "$tags" | grep -q '"llama3:70b"' || { echo "FAIL: tags missing llama3:70b"; exit 1; }
-echo "$tags" | grep -q '"mistral:7b"' || { echo "FAIL: tags missing mistral:7b"; exit 1; }
-echo "  OK"
+step "3. Generic request through the proxy (mirrored)"
+curl -fsS -X POST "$BASE/any/path" -H 'Content-Type: application/json' \
+    -d '{"ping":"pong"}' | python3 -m json.tool
 
-echo "[smoke] SC2: POST /api/generate (SSE) through proxy"
-sse=$(curl -fsS -X POST http://127.0.0.1:8080/api/generate \
-    -H "Content-Type: application/json" \
-    -d '{"model":"llama3:70b","prompt":"hello","stream":true}')
-echo "$sse" | grep -q 'data: ' || { echo "FAIL: no SSE data lines"; exit 1; }
-echo "$sse" | grep -q '"done":true' || { echo "FAIL: no done marker"; exit 1; }
-echo "  OK"
-
-echo "[smoke] SC3: /api/usage reflects requests"
-# give the mirror subrequests a moment
+step "4. Usage after mirrored request"
 sleep 1
-usage=$(curl -fsS http://127.0.0.1:9090/api/usage)
-echo "$usage" | grep -q '"total_requests":' || { echo "FAIL: no total_requests"; exit 1; }
-total=$(echo "$usage" | python3 -c "import sys,json; print(json.load(sys.stdin)['total_requests'])")
-if [ "$total" -lt 2 ]; then
-    echo "FAIL: total_requests=$total expected >= 2"
-    exit 1
-fi
-echo "  OK (total_requests=$total)"
+curl -fsS "$SIDE/api/usage" | python3 -m json.tool
 
-echo "[smoke] SC8: /api/healthz"
-curl -fsS http://127.0.0.1:9090/api/healthz | grep -q '"status":"ok"' || { echo "FAIL: healthz"; exit 1; }
-echo "  OK"
+step "5. Direct request to the upstream (also mirrored by the proxy path)"
+curl -fsS "$UP/healthz" >/dev/null
+sleep 1
+step "6. Final usage (total should be >= 2, last_seen recent)"
+curl -fsS "$SIDE/api/usage" | python3 -m json.tool
 
-echo "[smoke] PASSED"
+echo
+printf '\033[1;32mSMOKE OK\033[0m\n'

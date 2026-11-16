@@ -1,4 +1,10 @@
-// Package state tracks per-model last-seen timestamps.
+// Package state tracks usage for a generic web API proxy.
+//
+// It records only two things:
+//   - total: cumulative request count
+//   - lastSeen: timestamp of the most recent request
+//
+// No endpoint, model, or per-client state is kept.
 package state
 
 import (
@@ -6,45 +12,40 @@ import (
 	"time"
 )
 
-// Store is a concurrency-safe, in-memory last-seen tracker keyed by model name.
+// Store is a concurrency-safe, in-memory usage counter.
 type Store struct {
 	mu       sync.RWMutex
-	lastSeen map[string]time.Time
+	total    int64
+	lastSeen time.Time
 }
 
 // New returns an empty Store.
 func New() *Store {
-	return &Store{lastSeen: make(map[string]time.Time)}
+	return &Store{}
 }
 
-// Record marks the model as seen at now.
-// An empty model key is a no-op (unknown model).
-func (s *Store) Record(model string, now time.Time) {
-	if model == "" {
-		return
-	}
+// Record registers one request that occurred at now.
+// It increments the total count and updates lastSeen to the most recent time.
+func (s *Store) Record(now time.Time) {
 	s.mu.Lock()
-	s.lastSeen[model] = now
+	s.total++
+	if now.After(s.lastSeen) {
+		s.lastSeen = now
+	}
 	s.mu.Unlock()
 }
 
-// LastSeen returns the most recent recorded time for the model.
-// If the model has never been recorded, it returns (zero time, false).
-func (s *Store) LastSeen(model string) (time.Time, bool) {
+// Total returns the cumulative request count.
+func (s *Store) Total() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	t, ok := s.lastSeen[model]
-	return t, ok
+	return s.total
 }
 
-// Snapshot returns a consistent point-in-time copy of all recorded models.
-// The returned map is safe to use without holding the lock.
-func (s *Store) Snapshot() map[string]time.Time {
+// LastSeen returns the most recent recorded timestamp.
+// If no request has been recorded, it returns the zero time.
+func (s *Store) LastSeen() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[string]time.Time, len(s.lastSeen))
-	for k, v := range s.lastSeen {
-		out[k] = v
-	}
-	return out
+	return s.lastSeen
 }

@@ -6,67 +6,60 @@ import (
 	"time"
 )
 
-func TestRecordAndLastSeen(t *testing.T) {
+func TestRecordIncrementsTotalAndLastSeen(t *testing.T) {
 	s := New()
-	now := time.Now()
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 
-	s.Record("llama3.1:8b", now)
+	s.Record(now)
 
-	got, ok := s.LastSeen("llama3.1:8b")
-	if !ok {
-		t.Fatal("expected model to be present")
+	if got := s.Total(); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
 	}
-	if !got.Equal(now) {
-		t.Fatalf("got %v, want %v", got, now)
+	if !s.LastSeen().Equal(now) {
+		t.Fatalf("lastSeen = %v, want %v", s.LastSeen(), now)
 	}
 }
 
-func TestLastSeenUnknownModel(t *testing.T) {
+func TestRecordMultiple(t *testing.T) {
 	s := New()
-	_, ok := s.LastSeen("no-such-model")
-	if ok {
-		t.Fatal("expected unknown model to return false")
+	t0 := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+
+	s.Record(t0)
+	s.Record(t0.Add(time.Minute))
+	s.Record(t0.Add(2 * time.Minute))
+
+	if got := s.Total(); got != 3 {
+		t.Fatalf("total = %d, want 3", got)
+	}
+	want := t0.Add(2 * time.Minute)
+	if !s.LastSeen().Equal(want) {
+		t.Fatalf("lastSeen = %v, want %v", s.LastSeen(), want)
 	}
 }
 
-func TestRecordEmptyModelNoop(t *testing.T) {
+func TestRecordEarlierTimeDoesNotRegressLastSeen(t *testing.T) {
 	s := New()
-	now := time.Now()
-	s.Record("", now)
+	late := time.Date(2026, 11, 15, 13, 0, 0, 0, time.UTC)
+	early := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 
-	snap := s.Snapshot()
-	if len(snap) != 0 {
-		t.Fatalf("expected empty snapshot, got %v", snap)
+	s.Record(late)
+	s.Record(early)
+
+	if !s.LastSeen().Equal(late) {
+		t.Fatalf("lastSeen = %v, want %v (should not regress)", s.LastSeen(), late)
+	}
+	if got := s.Total(); got != 2 {
+		t.Fatalf("total = %d, want 2", got)
 	}
 }
 
-func TestRecordOverwritesEarlier(t *testing.T) {
+func TestEmptyStore(t *testing.T) {
 	s := New()
-	t1 := time.Now().Add(-1 * time.Hour)
-	t2 := time.Now()
-
-	s.Record("m", t1)
-	s.Record("m", t2)
-
-	got, _ := s.LastSeen("m")
-	if !got.Equal(t2) {
-		t.Fatalf("expected latest timestamp, got %v, want %v", got, t2)
+	if got := s.Total(); got != 0 {
+		t.Fatalf("total = %d, want 0", got)
 	}
-}
-
-func TestSnapshotIsIsolatedCopy(t *testing.T) {
-	s := New()
-	s.Record("a", time.Now())
-
-	snap1 := s.Snapshot()
-	s.Record("b", time.Now())
-	snap2 := s.Snapshot()
-
-	if _, ok := snap1["b"]; ok {
-		t.Fatal("snapshot1 should not contain b (taken before b was recorded)")
-	}
-	if _, ok := snap2["a"]; !ok {
-		t.Fatal("snapshot2 should contain a")
+	if !s.LastSeen().IsZero() {
+		t.Fatalf("lastSeen = %v, want zero time", s.LastSeen())
 	}
 }
 
@@ -75,14 +68,17 @@ func TestConcurrentRecord(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go func(i int) {
+		go func() {
 			defer wg.Done()
-			s.Record("shared", time.Now())
-		}(i)
+			s.Record(time.Now())
+		}()
 	}
 	wg.Wait()
 
-	if _, ok := s.LastSeen("shared"); !ok {
-		t.Fatal("expected shared model to be present after concurrent records")
+	if got := s.Total(); got != 100 {
+		t.Fatalf("total = %d, want 100", got)
+	}
+	if s.LastSeen().IsZero() {
+		t.Fatal("lastSeen should not be zero after records")
 	}
 }

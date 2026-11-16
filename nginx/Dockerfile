@@ -7,8 +7,16 @@ FROM nginx:1.27-alpine AS final
 # Remove default conf
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Copy our config
-COPY ollama-mirror.conf /etc/nginx/conf.d/ollama-mirror.conf
+# Copy our config as a template. The nginx:alpine entrypoint runs
+# envsubst on files in /etc/nginx/templates/ and writes the result
+# to /etc/nginx/conf.d/ — this lets us use $UPSTREAM from the
+# environment without nginx's (unsupported) variable syntax in
+# upstream blocks.
+COPY ollama-mirror.conf /etc/nginx/templates/ollama-mirror.conf.template
+
+# Restrict envsubst to only substitute $UPSTREAM so nginx
+# variables like $host, $remote_addr are left intact.
+ENV NGINX_ENVSUBST_FILTER='UPSTREAM'
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \

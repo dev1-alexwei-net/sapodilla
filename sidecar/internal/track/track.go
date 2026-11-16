@@ -1,4 +1,8 @@
 // Package track handles the sidecar's /track endpoint.
+//
+// It is intentionally generic: it accepts any request (any method, any path,
+// any body) and simply registers that a request happened. It does not parse
+// the body, the URL, or any headers.
 package track
 
 import (
@@ -10,7 +14,7 @@ import (
 	"github.com/dev1-alexwei-net/ollama-mirror/internal/state"
 )
 
-// Handler serves POST /track and GET /api/healthz (health is separate).
+// Handler serves POST /track.
 type Handler struct {
 	Store *state.Store
 	Now   func() time.Time // injectable for tests
@@ -23,44 +27,17 @@ func NewHandler(s *state.Store) *Handler {
 
 // ServeHTTP handles the /track request.
 //
-// The request body is the raw Ollama request JSON (e.g.
-// {"model":"llama3.1:8b","prompt":"..."}) or may be empty for GETs.
-//
-// The sidecar always responds 200 with the body it received unchanged
-// (so NGINX mirror doesn't care about our response), and records the
-// model in the store.
-//
-// For our use case we only need to extract the "model" field.
+// The body is ignored: the sidecar only needs to know that a request
+// occurred. NGINX mirrors requests here (with mirror_request_body off),
+// so the body is typically empty.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	now := h.Now()
-	model := extractModel(r)
-	h.Store.Record(model, now)
+	h.Store.Record(now)
 
-	// Always 200, minimal body.
+	// Always 200, minimal body. NGINX mirror does not use our response.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]any{
-		"model": model,
-		"ok":    true,
-	})
-}
-
-// extractModel pulls the "model" field from the request.
-// It checks the JSON body first, then the "model" query param
-// (some proxy configurations may pass it that way).
-func extractModel(r *http.Request) string {
-	if m := r.URL.Query().Get("model"); m != "" {
-		return m
-	}
-	// Try to read the body (it may already be consumed by NGINX mirror;
-	// in our design NGINX forwards the original body to the sidecar).
-	var payload struct {
-		Model string `json:"model"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-		return payload.Model
-	}
-	return ""
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
 // LogMiddleware logs every request at debug level.

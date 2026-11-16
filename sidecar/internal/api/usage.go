@@ -10,21 +10,23 @@ import (
 )
 
 // UsageResponse is the shape of GET /api/usage.
+//
+// It is intentionally minimal: just the cumulative request count and the
+// timestamp of the most recent request. No per-model, per-endpoint, or
+// per-client state is exposed.
 type UsageResponse struct {
-	Models   map[string]time.Time `json:"models"`
-	LastSeen time.Time            `json:"last_seen"` // most recent across all models
-	Total    int                  `json:"total"`
+	Total    int64      `json:"total"`
+	LastSeen *time.Time `json:"last_seen"`
 }
 
 // UsageHandler serves GET /api/usage.
 type UsageHandler struct {
 	Store *state.Store
-	Now   func() time.Time
 }
 
 // NewUsageHandler returns a handler with the given store.
 func NewUsageHandler(s *state.Store) *UsageHandler {
-	return &UsageHandler{Store: s, Now: time.Now}
+	return &UsageHandler{Store: s}
 }
 
 // ServeHTTP handles GET /api/usage.
@@ -35,19 +37,16 @@ func (h *UsageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snap := h.Store.Snapshot()
-
-	var lastSeen time.Time
-	for _, ts := range snap {
-		if ts.After(lastSeen) {
-			lastSeen = ts
-		}
-	}
+	total := h.Store.Total()
+	lastSeen := h.Store.LastSeen()
 
 	resp := UsageResponse{
-		Models:   snap,
-		LastSeen: lastSeen,
-		Total:    len(snap),
+		Total:    total,
+		LastSeen: nil,
+	}
+	if !lastSeen.IsZero() {
+		ts := lastSeen
+		resp.LastSeen = &ts
 	}
 
 	w.Header().Set("Content-Type", "application/json")

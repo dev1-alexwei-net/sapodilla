@@ -1,125 +1,107 @@
+// Package api provides the read-only REST API for querying usage state.
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/dev1-alexwei-net/ollama-mirror/internal/state"
 )
 
-func TestUsageEmpty(t *testing.T) {
-	s := state.New()
-	h := NewUsageHandler(s)
+func newTestServer(t *testing.T) (*state.Store, *httptest.Server) {
+	t.Helper()
+	store := state.New()
+	srv := httptest.NewServer(NewUsageHandler(store))
+	t.Cleanup(srv.Close)
+	return store, srv
+}
 
-	req := httptest.NewRequest("GET", "/api/usage", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+func TestUsageJSONShape(t *testing.T) {
+	store, srv := newTestServer(t)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	// Empty state: total=0, last_seen=null
+	body := doGet(t, srv.URL+"/api/usage")
+	var resp struct {
+		Total    int64   `json:"total"`
+		LastSeen *string `json:"last_seen"`
 	}
-	var resp UsageResponse
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
 	if resp.Total != 0 {
 		t.Fatalf("total = %d, want 0", resp.Total)
 	}
-	if len(resp.Models) != 0 {
-		t.Fatalf("models = %v, want empty", resp.Models)
+	if resp.LastSeen != nil {
+		t.Fatalf("last_seen = %v, want null", *resp.LastSeen)
+	}
+
+	// After a record: total=1, last_seen is a string
+	now := time.Now().UTC()
+	store.Record(now)
+	body = doGet(t, srv.URL+"/api/usage")
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("total = %d, want 1", resp.Total)
+	}
+	if resp.LastSeen == nil {
+		t.Fatal("last_seen = null, want a timestamp string")
 	}
 }
 
-func TestUsagePopulated(t *testing.T) {
-	s := state.New()
-	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	s.Record("llama3.1:8b", now)
-	s.Record("mistral:7b", now.Add(-1*time.Hour))
-
-	h := NewUsageHandler(s)
-	req := httptest.NewRequest("GET", "/api/usage", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	var resp UsageResponse
-	json.NewDecoder(rec.Body).Decode(&resp)
-
-	if resp.Total != 2 {
-		t.Fatalf("total = %d, want 2", resp.Total)
+func TestUsageAfterMultipleRecords(t *testing.T) {
+	store, srv := newTestServer(t)
+	base := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		store.Record(base.Add(time.Duration(i) * time.Second))
 	}
-	if !resp.LastSeen.Equal(now) {
-		t.Fatalf("lastSeen = %v, want %v", resp.LastSeen, now)
+	body := doGet(t, srv.URL+"/api/usage")
+	var resp struct {
+		Total    int64   `json:"total"`
+		LastSeen *string `json:"last_seen"`
 	}
-	if _, ok := resp.Models["llama3.1:8b"]; !ok {
-		t.Fatal("llama3.1:8b not in models")
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-	if _, ok := resp.Models["mistral:7b"]; !ok {
-		t.Fatal("mistral:7b not in models")
+	if resp.Total != 5 {
+		t.Fatalf("total = %d, want 5", resp.Total)
+	}
+	if resp.LastSeen == nil {
+		t.Fatal("last_seen = null, want timestamp")
 	}
 }
 
 func TestUsageMethodNotAllowed(t *testing.T) {
-	s := state.New()
-	h := NewUsageHandler(s)
-
-	req := httptest.NewRequest("POST", "/api/usage", strings.NewReader("{}"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405", rec.Code)
+	_, srv := newTestServer(t)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/usage", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", resp.StatusCode)
 	}
 }
 
-func TestUsageSnapshotStability(t *testing.T) {
-	// Record two models, take snapshot, then record a third.
-	// The first response must NOT include the third model.
-	s := state.New()
-	h := NewUsageHandler(s)
-	now := time.Now()
-
-	s.Record("a", now)
-	s.Record("b", now)
-
-	req := httptest.NewRequest("GET", "/api/usage", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	// Mutate after the snapshot was served
-	s.Record("c", now)
-
-	var resp UsageResponse
-	json.NewDecoder(rec.Body).Decode(&resp)
-
-	if _, ok := resp.Models["c"]; ok {
-		t.Fatal("snapshot should not contain model c (recorded after response)")
+func doGet(t *testing.T, url string) []byte {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if resp.Total != 2 {
-		t.Fatalf("total = %d, want 2", resp.Total)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-}
-
-func TestUsageJSONShape(t *testing.T) {
-	s := state.New()
-	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	s.Record("x", now)
-
-	h := NewUsageHandler(s)
-	req := httptest.NewRequest("GET", "/api/usage", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	// Verify top-level keys
-	var raw map[string]json.RawMessage
-	json.NewDecoder(rec.Body).Decode(&raw)
-
-	for _, key := range []string{"models", "last_seen", "total"} {
-		if _, ok := raw[key]; !ok {
-			t.Fatalf("missing top-level key %q in response", key)
-		}
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		t.Fatal(err)
 	}
+	return buf.Bytes()
 }

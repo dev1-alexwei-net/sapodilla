@@ -11,55 +11,61 @@ import (
 	"github.com/dev1-alexwei-net/ollama-mirror/internal/state"
 )
 
-func TestTrackRecordsModelFromBody(t *testing.T) {
+func TestTrackIncrementsTotal(t *testing.T) {
 	s := state.New()
 	h := NewHandler(s)
 	fixed := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 	h.Now = func() time.Time { return fixed }
 
-	body := `{"model":"llama3.1:8b","prompt":"hi"}`
-	req := httptest.NewRequest("POST", "/track", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/track", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	got, ok := s.LastSeen("llama3.1:8b")
-	if !ok {
-		t.Fatal("model not recorded")
+	if got := s.Total(); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
 	}
-	if !got.Equal(fixed) {
-		t.Fatalf("lastSeen = %v, want %v", got, fixed)
+	if !s.LastSeen().Equal(fixed) {
+		t.Fatalf("lastSeen = %v, want %v", s.LastSeen(), fixed)
 	}
 }
 
-func TestTrackRecordsModelFromQueryParam(t *testing.T) {
+func TestTrackIgnoresBody(t *testing.T) {
 	s := state.New()
 	h := NewHandler(s)
 
-	req := httptest.NewRequest("GET", "/track?model=mistral:7b", nil)
+	// Body with arbitrary JSON — sidecar must not care.
+	req := httptest.NewRequest("POST", "/track",
+		strings.NewReader(`{"model":"llama3.1:8b","prompt":"hi"}`))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if _, ok := s.LastSeen("mistral:7b"); !ok {
-		t.Fatal("model from query param not recorded")
+	if got := s.Total(); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
 	}
 }
 
-func TestTrackEmptyModelNoop(t *testing.T) {
+func TestTrackArbitraryMethodAndPath(t *testing.T) {
 	s := state.New()
 	h := NewHandler(s)
 
-	req := httptest.NewRequest("POST", "/track", strings.NewReader("{}"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	// Any method, any path — all should be recorded.
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
+		req := httptest.NewRequest(method, "/whatever/path?x=1", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
 
-	if len(s.Snapshot()) != 0 {
-		t.Fatalf("expected no records, got %v", s.Snapshot())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", method, rec.Code)
+		}
+	}
+	if got := s.Total(); got != 5 {
+		t.Fatalf("total = %d, want 5", got)
 	}
 }
 
@@ -67,12 +73,16 @@ func TestTrackMalformedBodyStill200(t *testing.T) {
 	s := state.New()
 	h := NewHandler(s)
 
-	req := httptest.NewRequest("POST", "/track", strings.NewReader("not json at all"))
+	req := httptest.NewRequest("POST", "/track",
+		strings.NewReader("not json at all"))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 even for malformed body", rec.Code)
+	}
+	if got := s.Total(); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
 	}
 }
 
@@ -80,7 +90,7 @@ func TestTrackResponseBodyIsJSON(t *testing.T) {
 	s := state.New()
 	h := NewHandler(s)
 
-	req := httptest.NewRequest("POST", "/track", strings.NewReader(`{"model":"x"}`))
+	req := httptest.NewRequest("POST", "/track", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 

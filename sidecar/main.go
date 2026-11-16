@@ -1,12 +1,14 @@
-// Command ollama-mirror sidecar is a lightweight usage-tracking sidecar
-// for an Ollama proxy. It receives metadata-only requests from NGINX
-// (via the mirror directive) and records per-model last-seen timestamps
-// in memory. It exposes a minimal REST API for querying usage state.
+// Command sidecar is a lightweight usage-tracking sidecar for a generic
+// web API proxy. It receives metadata-only requests from NGINX (via the
+// mirror directive) and records a cumulative request count plus the
+// timestamp of the most recent request. It exposes a minimal REST API for
+// querying usage state.
 //
 // Design constraints:
 //   - stdlib only (no third-party dependencies)
 //   - single binary, no persistence
 //   - concurrency-safe
+//   - generic: works in front of any web API, not just Ollama
 package main
 
 import (
@@ -41,7 +43,7 @@ func main() {
 		})
 	})
 
-	// Track: called by NGINX mirror for every proxied Ollama request
+	// Track: called by NGINX mirror for every proxied request (any API, any path)
 	trackHandler := track.NewHandler(st)
 	mux.Handle("/track", track.LogMiddleware(trackHandler))
 
@@ -67,7 +69,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	log.Printf("ollama-mirror sidecar listening on %s", *addr)
+	log.Printf("sidecar listening on %s", *addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
 	}

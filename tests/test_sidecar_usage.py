@@ -1,7 +1,8 @@
-"""SC4-SC7: /api/usage shape + values.
+"""/api/usage — unit tests (hits sidecar directly).
 
-Unit tests: verify the JSON shape of /api/usage and that the values
-are internally consistent.
+The sidecar returns a minimal JSON object with only two fields:
+  total      int    cumulative request count
+  last_seen  string ISO-8601 UTC timestamp (or null if no requests yet)
 """
 
 from __future__ import annotations
@@ -10,50 +11,35 @@ import requests
 
 
 def test_usage_shape(sidecar: str) -> None:
-    base = sidecar
     # Make a request first so the state is non-empty
-    requests.post(f"{base}/track", json={"model": "shape-model", "endpoint": "/api/generate"})
-    r = requests.get(f"{base}/api/usage")
+    requests.post(f"{sidecar}/track", timeout=5)
+    r = requests.get(f"{sidecar}/api/usage", timeout=5)
     assert r.status_code == 200
     assert r.headers["Content-Type"].startswith("application/json")
 
     data = r.json()
-    # Required top-level fields
-    assert "total_requests" in data
-    assert "last_request_at" in data
-    assert "idle_for_seconds" in data
-    assert "endpoints" in data
-    assert "recent" in data
-
-    # Types
-    assert isinstance(data["total_requests"], int)
-    assert isinstance(data["last_request_at"], (int, float))
-    assert isinstance(data["idle_for_seconds"], (int, float))
-    assert isinstance(data["endpoints"], dict)
-    assert isinstance(data["recent"], list)
-
-    # recent entries shape
-    for entry in data["recent"]:
-        assert "model" in entry
-        assert "endpoint" in entry
-        assert "at" in entry
+    assert "total" in data
+    assert "last_seen" in data
+    assert isinstance(data["total"], int)
+    assert data["total"] >= 1
+    assert isinstance(data["last_seen"], str)
+    # No legacy fields
+    assert "models" not in data
+    assert "endpoints" not in data
+    assert "recent" not in data
 
 
-def test_usage_totals_consistent(sidecar: str) -> None:
-    base = sidecar
-    # Seed a known number of events
-    N = 7
-    for i in range(N):
-        requests.post(f"{base}/track", json={"model": f"m{i}", "endpoint": f"/ep{i}"})
-    data = requests.get(f"{base}/api/usage").json()
-    assert data["total_requests"] >= N
-    # endpoints sum should be <= total_requests
-    assert sum(data["endpoints"].values()) >= N
+def test_usage_total_increments(sidecar: str) -> None:
+    before = requests.get(f"{sidecar}/api/usage", timeout=5).json()["total"]
+    for _ in range(3):
+        requests.post(f"{sidecar}/track", timeout=5)
+    after = requests.get(f"{sidecar}/api/usage", timeout=5).json()["total"]
+    assert after == before + 3
 
 
-def test_usage_recent_capped(sidecar: str) -> None:
-    base = sidecar
-    # HISTORY_LEN default is 100; we only assert the cap exists
-    data = requests.get(f"{base}/api/usage").json()
-    # The cap is enforced; just check the list is bounded
-    assert len(data["recent"]) <= 1000  # generous upper bound
+def test_usage_last_seen_advances(sidecar: str) -> None:
+    t0 = requests.get(f"{sidecar}/api/usage", timeout=5).json()
+    requests.post(f"{sidecar}/track", timeout=5)
+    t1 = requests.get(f"{sidecar}/api/usage", timeout=5).json()
+    if t0["last_seen"] is not None:
+        assert t1["last_seen"] >= t0["last_seen"]

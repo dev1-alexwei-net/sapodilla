@@ -67,8 +67,8 @@ jobs:
       - name: Build nginx image
         run: docker build -t ollama-mirror-nginx:ci -f nginx/Dockerfile nginx/
 
-      - name: Build mock-ollama image
-        run: docker build -t ollama-mirror-mock:ci -f mock-ollama/Dockerfile mock-ollama/
+      - name: Build upstream mock image
+        run: docker build -t ollama-mirror-upstream:ci -f upstream/Dockerfile upstream/
 
       - name: Verify images
         run: |
@@ -105,7 +105,7 @@ jobs:
       - name: Wait for proxy (backend ready)
         run: |
           for i in $(seq 1 90); do
-            if curl -sf http://localhost:8080/api/tags 2>/dev/null | python3 -m json.tool >/dev/null 2>&1; then
+            if curl -sf http://localhost:8080/api/ping 2>/dev/null | python3 -m json.tool >/dev/null 2>&1; then
               echo "Proxy + backend ready after ${i}s"
               break
             fi
@@ -126,17 +126,17 @@ jobs:
           curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:8080/
           echo ""
 
-      - name: Tags passthrough
+      - name: Ping passthrough
         run: |
-          echo "=== Tags via proxy ==="
+          echo "=== Ping via proxy ==="
           for i in $(seq 1 10); do
-            if curl -sf http://localhost:8080/api/tags | python3 -m json.tool; then
+            if curl -sf http://localhost:8080/api/ping | python3 -m json.tool; then
               exit 0
             fi
             echo "Retry $i/10..."
             sleep 1
           done
-          echo "::error::Tags endpoint never returned valid JSON"
+          echo "::error::Ping endpoint never returned valid JSON"
           exit 1
 
       - name: Usage endpoint
@@ -147,14 +147,10 @@ jobs:
 
       - name: Make a tracked request
         run: |
-          echo "=== Making a chat request ==="
-          curl -sf http://localhost:8080/api/chat \
+          echo "=== Making a request ==="
+          curl -sf http://localhost:8080/echo \
             -H 'Content-Type: application/json' \
-            -d '{
-              "model": "llama3.2:1b",
-              "messages": [{"role": "user", "content": "hello"}],
-              "stream": false
-            }' | python3 -m json.tool
+            -d '{"hello": "world"}' | python3 -m json.tool
           echo ""
 
       - name: Verify tracking
