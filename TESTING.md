@@ -7,7 +7,7 @@ require Ollama or a live external API.
 ## Prerequisites
 
 - Go 1.23 or newer for sidecar tests.
-- Python 3.9 or newer and the test extra: `python -m pip install -e '.[test]'`.
+- Python 3.9 or newer, pytest, and requests: `python -m pip install 'pytest>=7' 'requests>=2.28'`.
 - Docker Engine and Docker Compose v2 for tests that start the Compose stack.
 
 ## Run checks locally
@@ -47,6 +47,7 @@ smoke script when using non-default ports.
 Pull requests to `main` run:
 
 - Go formatting, `go vet`, and race-enabled Go unit tests.
+- The pytest suite, including Compose-backed integration tests.
 - Docker builds for the sidecar, NGINX proxy, and mock upstream.
 - A Docker Compose smoke flow using non-default proxy, sidecar, and upstream
   ports.

@@ -19,8 +19,12 @@ import subprocess
 import time
 import urllib.request
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -165,6 +169,25 @@ def proxy(compose_ports: dict[str, int]) -> str:
         yield base
     finally:
         _compose("-f", str(compose_file), "down", "-v", "-t", "3", env=compose_env)
+
+
+@pytest.fixture
+def sidecar_stopped(proxy: str, compose_ports: dict[str, int]) -> Iterator[None]:
+    """Stop the Compose sidecar for an outage check, then restore it."""
+    compose_env = os.environ.copy()
+    compose_env.update({k: str(v) for k, v in compose_ports.items()})
+
+    result = _compose("stop", "sidecar", env=compose_env)
+    if result.returncode != 0:
+        raise RuntimeError(f"docker compose stop sidecar failed:\n{result.stderr}")
+
+    try:
+        yield
+    finally:
+        result = _compose("start", "sidecar", env=compose_env)
+        if result.returncode != 0:
+            raise RuntimeError(f"docker compose start sidecar failed:\n{result.stderr}")
+        _wait_http(f"http://127.0.0.1:{compose_ports['SIDECAR_PORT']}/api/healthz")
 
 
 @pytest.fixture(scope="session")

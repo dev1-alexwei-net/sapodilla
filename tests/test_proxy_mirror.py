@@ -1,7 +1,7 @@
-"""SC3 (integration): after N requests through the proxy, the sidecar
-reports total >= N.  This exercises the full mirror path: NGINX mirror
-directive fires a side request to the sidecar for every proxied request,
-and the sidecar records it.  We verify via /api/usage.
+"""Requests proxied through NGINX are counted by the sidecar.
+
+This exercises the mirror path: NGINX sends a metadata-only subrequest to the
+sidecar for each proxied request, and the sidecar records the count.
 """
 
 from __future__ import annotations

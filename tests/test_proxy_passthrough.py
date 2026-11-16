@@ -1,6 +1,7 @@
-"""SC1 (integration): GET /api/ping through the proxy returns the
-upstream's JSON unchanged.  The nginx front door must pass through to
-the generic mock upstream and return the JSON body as-is.
+"""Generic ping and echo responses pass through the proxy unchanged.
+
+The NGINX front door forwards requests to the mock upstream and returns its
+response to the caller.
 """
 
 from __future__ import annotations
@@ -13,7 +14,9 @@ def test_proxy_passes_ping(proxy: str) -> None:
     assert r.status_code == 200
     assert r.headers["Content-Type"].startswith("application/json")
     data = r.json()
-    assert data["status"] == "ok"
+    assert data["upstream"] == "generic-mock"
+    assert data["method"] == "GET"
+    assert data["path"] == "/api/ping"
 
 
 def test_proxy_passes_echo(proxy: str) -> None:

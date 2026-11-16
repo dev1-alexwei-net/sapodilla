@@ -1,16 +1,15 @@
-"""SC9 (integration): when the sidecar is down, proxied requests still
-succeed — the mirror directive is fire-and-forget and must not break
-the main request.
-"""
+"""Proxied requests still succeed when the sidecar is unavailable."""
 
 from __future__ import annotations
 
 import requests
 
 
-def test_proxy_still_works_without_sidecar(proxy: str) -> None:
-    """The proxy front door serves upstream traffic even when the
-    sidecar is unreachable (the mirror side request fails silently)."""
+def test_proxy_still_works_without_sidecar(proxy: str, sidecar_stopped: None) -> None:
+    """The proxy serves upstream traffic while the mirror target is stopped."""
     r = requests.get(f"{proxy}/api/ping", timeout=10)
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    data = r.json()
+    assert data["upstream"] == "generic-mock"
+    assert data["method"] == "GET"
+    assert data["path"] == "/api/ping"
