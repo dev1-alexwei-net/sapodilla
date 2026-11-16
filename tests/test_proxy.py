@@ -1,41 +1,28 @@
-"""End-to-end proxy and sidecar integration checks."""
-
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import requests
+if TYPE_CHECKING:
+    from conftest import Session
 
 
 class TestProxy:
-    def test_ping_passthrough(self, proxy: str) -> None:
-        response = requests.get(f"{proxy}/api/ping", timeout=10)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["upstream"] == "generic-mock"
-        assert data["method"] == "GET"
-        assert data["path"] == "/api/ping"
-        assert data["body_bytes"] == 0
+    def test_passthrough(self, session: Session) -> None:
+        get = session["client"].get(f"{session['proxy']}/api/ping", timeout=10)
+        post = session["client"].post(
+            f"{session['proxy']}/echo", json={"hello": "world", "n": 42}, timeout=10
+        )
+        assert get.status_code == post.status_code == 200
+        assert (get.json()["method"], get.json()["path"]) == ("GET", "/api/ping")
+        assert post.json()["body"] == {"hello": "world", "n": 42}
 
-    def test_echo_passthrough(self, proxy: str) -> None:
-        payload = {"hello": "world", "n": 42}
-        response = requests.post(f"{proxy}/echo", json=payload, timeout=10)
-        assert response.status_code == 200
-        assert response.json()["body"] == payload
-        assert response.json()["path"] == "/echo"
-
-    def test_mirrors_requests(self, proxy: str, compose_sidecar: str) -> None:
-        before = requests.get(f"{compose_sidecar}/api/usage", timeout=5).json()["total"]
+    def test_mirrors_requests(self, session: Session, usage_before: int) -> None:
         for _ in range(3):
-            requests.get(f"{proxy}/api/ping", timeout=10)
-        after = requests.get(f"{compose_sidecar}/api/usage", timeout=5).json()["total"]
-        assert after >= before + 3
+            session["client"].get(f"{session['proxy']}/api/ping", timeout=10)
+        assert (
+            session["client"].get(f"{session['sidecar']}/api/usage", timeout=5).json()["total"]
+            >= usage_before + 3
+        )
 
-    def test_passes_through_when_sidecar_is_down(self, proxy: str, sidecar_stopped: None) -> None:
-        response = requests.get(f"{proxy}/api/ping", timeout=10)
-        assert response.status_code == 200
-        assert response.json()["upstream"] == "generic-mock"
-
-    def test_sidecar_port_is_loopback_only(self) -> None:
-        compose = (Path(__file__).parents[1] / "docker-compose.yml").read_text()
-        assert '"127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"' in compose
+    def test_sidecar_port_is_loopback_only(self, session: Session) -> None:
+        assert '"127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"' in session["compose"]

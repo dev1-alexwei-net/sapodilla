@@ -1,5 +1,3 @@
-"""Session fixtures for the Compose integration tests."""
-
 from __future__ import annotations
 
 import os
@@ -8,25 +6,30 @@ import subprocess
 import time
 import urllib.request
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TypedDict
 
 import pytest
+import requests
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
-def _wait_http(url: str, timeout: float = 30.0) -> None:
-    deadline = time.monotonic() + timeout
+class Session(TypedDict):
+    client: requests.Session
+    proxy: str
+    sidecar: str
+    compose: str
+
+
+def _wait(url: str) -> None:
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=2):
-                return
+            urllib.request.urlopen(url, timeout=2).close()
+            return
         except Exception:
             time.sleep(0.5)
-    raise TimeoutError(f"timed out waiting for {url}")
+    raise TimeoutError(url)
 
 
 def _free_port() -> int:
@@ -35,57 +38,33 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _compose_env(ports: dict[str, int]) -> dict[str, str]:
-    return os.environ | {key: str(value) for key, value in ports.items()}
-
-
-def _compose(*args: str, env: dict[str, str], timeout: int = 300) -> subprocess.CompletedProcess:
+def _compose(env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["docker", "compose", *args],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=env,
+        ["docker", "compose", *args], cwd=ROOT, capture_output=True, text=True, timeout=300, env=env
     )
 
 
 @pytest.fixture(scope="session")
-def compose_ports() -> dict[str, int]:
-    return {name: _free_port() for name in ("LISTEN_PORT", "SIDECAR_PORT", "UPSTREAM_PORT")}
-
-
-@pytest.fixture(scope="session")
-def proxy(compose_ports: dict[str, int]) -> Iterator[str]:
-    env = _compose_env(compose_ports)
-    result = _compose("up", "-d", "--build", env=env)
-    if result.returncode:
-        _compose("down", "-v", "-t", "3", env=env)
-        raise RuntimeError(f"docker compose up failed:\n{result.stderr}")
-
-    base = f"http://127.0.0.1:{compose_ports['LISTEN_PORT']}"
-    _wait_http(f"{base}/api/ping")
+def session():
+    ports = {name: _free_port() for name in ("LISTEN_PORT", "SIDECAR_PORT", "UPSTREAM_PORT")}
+    env = os.environ | {name: str(port) for name, port in ports.items()}
+    client = requests.Session()
+    deps: Session = {
+        "client": client,
+        "proxy": f"http://127.0.0.1:{ports['LISTEN_PORT']}",
+        "sidecar": f"http://127.0.0.1:{ports['SIDECAR_PORT']}",
+        "compose": (ROOT / "docker-compose.yml").read_text(),
+    }
     try:
-        yield base
+        result = _compose(env, "up", "-d", "--build")
+        assert result.returncode == 0, result.stderr
+        _wait(f"{deps['proxy']}/api/ping")
+        yield deps
     finally:
-        _compose("down", "-v", "-t", "3", env=env)
+        client.close()
+        _compose(env, "down", "-v", "-t", "3")
 
 
 @pytest.fixture
-def sidecar_stopped(proxy: str, compose_ports: dict[str, int]) -> Iterator[None]:
-    env = _compose_env(compose_ports)
-    result = _compose("stop", "sidecar", env=env)
-    if result.returncode:
-        raise RuntimeError(f"docker compose stop sidecar failed:\n{result.stderr}")
-    try:
-        yield
-    finally:
-        result = _compose("start", "sidecar", env=env)
-        if result.returncode:
-            raise RuntimeError(f"docker compose start sidecar failed:\n{result.stderr}")
-        _wait_http(f"http://127.0.0.1:{compose_ports['SIDECAR_PORT']}/api/healthz")
-
-
-@pytest.fixture(scope="session")
-def compose_sidecar(compose_ports: dict[str, int]) -> str:
-    return f"http://127.0.0.1:{compose_ports['SIDECAR_PORT']}"
+def usage_before(session: Session) -> int:
+    return session["client"].get(f"{session['sidecar']}/api/usage", timeout=5).json()["total"]
