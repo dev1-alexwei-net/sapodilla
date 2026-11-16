@@ -33,11 +33,8 @@ services:
     ports:
       - "127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"
     environment:
-      STATE_DIR: "/data"
       SIDECAR_PORT: "${SIDECAR_PORT:-9090}"
       ADDR: "${ADDR:-:${SIDECAR_PORT:-9090}}"
-    volumes:
-      - sidecar-data:/data
     networks:
       - mirror
     restart: unless-stopped
@@ -65,5 +62,3 @@ networks:
   mirror:
     driver: bridge
 
-volumes:
-  sidecar-data:

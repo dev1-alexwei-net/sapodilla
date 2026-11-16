@@ -25,10 +25,10 @@ class TestDockerCompose:
         # The sidecar API is available on localhost, not on all host interfaces.
         assert '"127.0.0.1:${SIDECAR_PORT:-9090}:${SIDECAR_PORT:-9090}"' in compose
 
-    def test_docker_compose_sidecar_data_persists(self, compose: str) -> None:
-        """The sidecar's counter state survives restarts via a named volume."""
-        assert "sidecar-data" in compose
-        assert "volumes:" in compose
+    def test_docker_compose_does_not_configure_unused_persistence(self, compose: str) -> None:
+        """The counter is in memory and resets when the sidecar restarts."""
+        assert "STATE_DIR" not in compose
+        assert "sidecar-data" not in compose
 
     def test_docker_compose_uses_network(self, compose: str) -> None:
         assert "mirror" in compose
