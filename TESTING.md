@@ -25,11 +25,10 @@ Run the Python suite from the repository root:
 python -m pytest -q
 ```
 
-The `sidecar` fixture builds and starts the Go binary on a free local port for
-health, tracking, and usage API tests. Compose integration tests start the
-NGINX proxy, sidecar, and bundled echo upstream with non-default ports, then
-verify generic request passthrough and usage counting. Pytest tears down the
-Compose stack when the session finishes.
+Go unit tests cover the store, tracker, and usage handler. Compose integration
+tests start the proxy, sidecar, and bundled echo upstream with non-default
+ports, then verify request passthrough, mirrored usage counts, and passthrough
+while the sidecar is stopped. Pytest tears down the Compose stack afterward.
 
 To run the end-to-end smoke script manually:
 

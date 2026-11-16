@@ -30,30 +30,12 @@ func main() {
 	addr := flag.String("addr", envOr("ADDR", ":9090"), "listen address for the sidecar API")
 	flag.Parse()
 
-	st := state.New()
-
-	mux := http.NewServeMux()
-
-	// Health
-	mux.HandleFunc("/api/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"status": "ok",
-			"time":   time.Now().UTC().Format(time.RFC3339),
-		})
-	})
-
-	// Track: called by NGINX mirror for every proxied request (any API, any path)
-	trackHandler := track.NewHandler(st)
-	mux.Handle("/track", track.LogMiddleware(trackHandler))
-
-	// Usage: query recorded usage state
-	mux.Handle("/api/usage", api.NewUsageHandler(st))
+	st := &state.Store{}
 
 	// Log every request
-	server := &http.Server{
+	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           logging(mux),
+		Handler:           newServer(st),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -63,16 +45,39 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-sigCh
 		log.Printf("received signal %v, shutting down", sig)
-		if err := server.Close(); err != nil {
+		if err := srv.Close(); err != nil {
 			log.Printf("server close: %v", err)
 		}
 		os.Exit(0)
 	}()
 
 	log.Printf("sidecar listening on %s", *addr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+type server struct{ mux *http.ServeMux }
+
+func newServer(store *state.Store) *server {
+	s := &server{mux: http.NewServeMux()}
+	s.mux.HandleFunc("/api/healthz", s.healthz)
+	s.mux.Handle("/track", track.NewHandler(store))
+	s.mux.Handle("/api/usage", api.NewUsageHandler(store))
+	return s
+}
+
+func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s", r.Method, r.URL.Path)
+	s.mux.ServeHTTP(w, r)
+}
+
+func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status": "ok",
+		"time":   time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func envOr(key, def string) string {
@@ -80,11 +85,4 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-func logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s", r.Method, r.URL.Path)
-		next.ServeHTTP(w, r)
-	})
 }

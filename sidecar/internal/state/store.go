@@ -1,10 +1,4 @@
-// Package state tracks usage for a generic web API proxy.
-//
-// It records only two things:
-//   - total: cumulative request count
-//   - lastSeen: timestamp of the most recent request
-//
-// No endpoint, model, or per-client state is kept.
+// Package state tracks the total and last-seen time of proxied requests.
 package state
 
 import (
@@ -12,40 +6,36 @@ import (
 	"time"
 )
 
-// Store is a concurrency-safe, in-memory usage counter.
+// Snapshot is an atomic view of the tracked request usage.
+type Snapshot struct {
+	Total    int64      `json:"total"`
+	LastSeen *time.Time `json:"last_seen"`
+}
+
+// Store is a concurrency-safe in-memory counter. Its zero value is ready to use.
 type Store struct {
 	mu       sync.RWMutex
 	total    int64
 	lastSeen time.Time
 }
 
-// New returns an empty Store.
-func New() *Store {
-	return &Store{}
-}
-
-// Record registers one request that occurred at now.
-// It increments the total count and updates lastSeen to the most recent time.
-func (s *Store) Record(now time.Time) {
+func (s *Store) Record(at time.Time) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.total++
-	if now.After(s.lastSeen) {
-		s.lastSeen = now
+	if at.After(s.lastSeen) {
+		s.lastSeen = at
 	}
-	s.mu.Unlock()
 }
 
-// Total returns the cumulative request count.
-func (s *Store) Total() int64 {
+// Snapshot returns the current usage without exposing the store's internal lock.
+func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.total
-}
-
-// LastSeen returns the most recent recorded timestamp.
-// If no request has been recorded, it returns the zero time.
-func (s *Store) LastSeen() time.Time {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.lastSeen
+	snapshot := Snapshot{Total: s.total}
+	if !s.lastSeen.IsZero() {
+		lastSeen := s.lastSeen
+		snapshot.LastSeen = &lastSeen
+	}
+	return snapshot
 }

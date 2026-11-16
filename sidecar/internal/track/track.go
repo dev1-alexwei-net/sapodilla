@@ -1,49 +1,31 @@
-// Package track handles the sidecar's /track endpoint.
-//
-// It is intentionally generic: it accepts any request (any method, any path,
-// any body) and simply registers that a request happened. It does not parse
-// the body, the URL, or any headers.
+// Package track handles metadata-only request notifications from the proxy.
 package track
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
-
-	"github.com/dev1-alexwei-net/ollama-mirror/internal/state"
 )
 
-// Handler serves POST /track.
+// Recorder is the storage behavior required by Handler.
+type Recorder interface {
+	Record(time.Time)
+}
+
+// Handler records the arrival time of a mirrored request.
 type Handler struct {
-	Store *state.Store
-	Now   func() time.Time // injectable for tests
+	store Recorder
+	now   func() time.Time
 }
 
-// NewHandler returns a track Handler with the given store.
-func NewHandler(s *state.Store) *Handler {
-	return &Handler{Store: s, Now: time.Now}
+// NewHandler constructs a Handler using the given recorder.
+func NewHandler(store Recorder) *Handler {
+	return &Handler{store: store, now: time.Now}
 }
 
-// ServeHTTP handles the /track request.
-//
-// The body is ignored: the sidecar only needs to know that a request
-// occurred. NGINX mirrors requests here (with mirror_request_body off),
-// so the body is typically empty.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	now := h.Now()
-	h.Store.Record(now)
-
-	// Always 200, minimal body. NGINX mirror does not use our response.
+	h.store.Record(h.now())
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]any{"ok": true})
-}
-
-// LogMiddleware logs every request at debug level.
-func LogMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("track: %s %s", r.Method, r.URL.Path)
-		next.ServeHTTP(w, r)
-	})
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

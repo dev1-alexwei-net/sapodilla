@@ -11,94 +11,40 @@ import (
 	"github.com/dev1-alexwei-net/ollama-mirror/internal/state"
 )
 
-func TestTrackIncrementsTotal(t *testing.T) {
-	s := state.New()
-	h := NewHandler(s)
-	fixed := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	h.Now = func() time.Time { return fixed }
+func TestHandlerRecordsAndAcknowledges(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	var store state.Store
+	h := &Handler{store: &store, now: func() time.Time { return now }}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/track", strings.NewReader("ignored")))
 
-	req := httptest.NewRequest("POST", "/track", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("response = %d %q, want 200 application/json", w.Code, w.Header().Get("Content-Type"))
 	}
-	if got := s.Total(); got != 1 {
-		t.Fatalf("total = %d, want 1", got)
+	var response struct {
+		OK bool `json:"ok"`
 	}
-	if !s.LastSeen().Equal(fixed) {
-		t.Fatalf("lastSeen = %v, want %v", s.LastSeen(), fixed)
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil || !response.OK {
+		t.Fatalf("response body = %q, err = %v, want {\"ok\":true}", w.Body, err)
 	}
-}
-
-func TestTrackIgnoresBody(t *testing.T) {
-	s := state.New()
-	h := NewHandler(s)
-
-	// Body with arbitrary JSON — sidecar must not care.
-	req := httptest.NewRequest("POST", "/track",
-		strings.NewReader(`{"model":"llama3.1:8b","prompt":"hi"}`))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if got := s.Total(); got != 1 {
-		t.Fatalf("total = %d, want 1", got)
+	if got := store.Snapshot(); got.Total != 1 || got.LastSeen == nil || !got.LastSeen.Equal(now) {
+		t.Fatalf("Snapshot() = %+v, want one record at %v", got, now)
 	}
 }
 
-func TestTrackArbitraryMethodAndPath(t *testing.T) {
-	s := state.New()
-	h := NewHandler(s)
-
-	// Any method, any path — all should be recorded.
-	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
-		req := httptest.NewRequest(method, "/whatever/path?x=1", nil)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s: status = %d, want 200", method, rec.Code)
-		}
-	}
-	if got := s.Total(); got != 5 {
-		t.Fatalf("total = %d, want 5", got)
-	}
-}
-
-func TestTrackMalformedBodyStill200(t *testing.T) {
-	s := state.New()
-	h := NewHandler(s)
-
-	req := httptest.NewRequest("POST", "/track",
-		strings.NewReader("not json at all"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 even for malformed body", rec.Code)
-	}
-	if got := s.Total(); got != 1 {
-		t.Fatalf("total = %d, want 1", got)
-	}
-}
-
-func TestTrackResponseBodyIsJSON(t *testing.T) {
-	s := state.New()
-	h := NewHandler(s)
-
-	req := httptest.NewRequest("POST", "/track", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	var resp map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("response is not valid JSON: %v", err)
-	}
-	if resp["ok"] != true {
-		t.Fatalf("expected ok=true, got %v", resp)
+func TestHandlerAcceptsAnyMethodAndBody(t *testing.T) {
+	for _, tc := range []struct{ method, body string }{
+		{http.MethodGet, ""},
+		{http.MethodPut, "not json"},
+		{http.MethodDelete, `{"arbitrary":true}`},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			var store state.Store
+			w := httptest.NewRecorder()
+			NewHandler(&store).ServeHTTP(w, httptest.NewRequest(tc.method, "/any/path", strings.NewReader(tc.body)))
+			if got := store.Snapshot().Total; w.Code != http.StatusOK || got != 1 {
+				t.Fatalf("response = %d, total = %d; want 200 and one record", w.Code, got)
+			}
+		})
 	}
 }
