@@ -5,10 +5,16 @@ in this project: a lightweight, stateless usage tracker that records a request
 total and the time of the latest request. It does not inspect request bodies or
 payloads — it only counts.
 
-An optional NGINX reverse proxy is provided so you can mirror any HTTP service
-through the sidecar for local development and testing. In production you would
-typically put your own proxy (or the API itself) in front of it; the NGINX
-component is development-only and optional.
+Sapodilla exists so that your proxy server, like nginx, can mirror requests
+to the tracking endpoint, e.g.:
+
+```nginx
+        mirror /track-usage-api;
+```
+
+The repository also includes an optional NGINX configuration and Compose stack
+for local development and testing of that setup. In production you would
+typically point your own proxy (or the API itself) at the endpoint.
 
 ## What the sidecar does
 
