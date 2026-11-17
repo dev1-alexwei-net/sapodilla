@@ -37,8 +37,9 @@ func TestMain(m *testing.M) {
 }
 
 type usageSnapshot struct {
-	Total    int64      `json:"total"`
-	LastSeen *time.Time `json:"last_seen"`
+	Total            int64  `json:"total"`
+	LastSeen         *int64  `json:"last_seen"`
+	LastSeenDateTime *string `json:"last_seen_datetime"`
 }
 
 func startUsageAPI(t *testing.T) (*http.Client, string) {
@@ -111,8 +112,8 @@ func readUsage(t *testing.T, client *http.Client, baseURL string) usageSnapshot 
 
 func TestUsageAPITracksRequests(t *testing.T) {
 	client, baseURL := startUsageAPI(t)
-	if got := readUsage(t, client, baseURL); got.Total != 0 || got.LastSeen != nil {
-		t.Fatalf("initial usage = %+v, want zero total and null last_seen", got)
+	if got := readUsage(t, client, baseURL); got.Total != 0 || got.LastSeen != nil || got.LastSeenDateTime != nil {
+		t.Fatalf("initial usage = %+v, want zero total and null timestamps", got)
 	}
 
 	response, err := client.Post(baseURL+"/track", "application/json", nil)
@@ -124,8 +125,20 @@ func TestUsageAPITracksRequests(t *testing.T) {
 		t.Fatalf("POST /track status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 
-	if got := readUsage(t, client, baseURL); got.Total != 1 || got.LastSeen == nil {
+	if got := readUsage(t, client, baseURL); got.Total != 1 || got.LastSeen == nil || got.LastSeenDateTime == nil {
 		t.Fatalf("usage after track = %+v, want total 1 and non-null last_seen", got)
+	} else {
+		now := time.Now().UnixMilli()
+		if *got.LastSeen < now-5000 || *got.LastSeen > now+5000 {
+			t.Fatalf("last_seen = %d, want milliseconds near %d", *got.LastSeen, now)
+		}
+		formatted, err := time.Parse(time.RFC3339Nano, *got.LastSeenDateTime)
+		if err != nil {
+			t.Fatalf("last_seen_datetime = %q, want RFC3339 datetime: %v", *got.LastSeenDateTime, err)
+		}
+		if formatted.UnixMilli() != *got.LastSeen {
+			t.Fatalf("last_seen_datetime = %q does not match last_seen = %d", *got.LastSeenDateTime, *got.LastSeen)
+		}
 	}
 }
 
@@ -170,7 +183,7 @@ func TestUsageAPIConcurrentTracking(t *testing.T) {
 	for err := range errs {
 		t.Error(err)
 	}
-	if got := readUsage(t, client, baseURL); got.Total != count || got.LastSeen == nil {
-		t.Fatalf("usage after concurrent tracking = %+v, want total %d", got, count)
+	if got := readUsage(t, client, baseURL); got.Total != count || got.LastSeen == nil || got.LastSeenDateTime == nil {
+		t.Fatalf("usage after concurrent tracking = %+v, want total %d and non-null timestamps", got, count)
 	}
 }
