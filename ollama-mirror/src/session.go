@@ -12,8 +12,8 @@ type session struct {
 }
 
 type snapshot struct {
-	Total    int64      `json:"total"`
-	LastSeen *time.Time `json:"last_seen"`
+	Total    int64 `json:"total"`
+	LastSeen *int64 `json:"last_seen"`
 }
 
 func (s *session) record(at time.Time) {
@@ -30,7 +30,7 @@ func (s *session) snapshot() snapshot {
 	defer s.mu.RUnlock()
 	result := snapshot{Total: s.total}
 	if !s.lastSeen.IsZero() {
-		lastSeen := s.lastSeen
+		lastSeen := s.lastSeen.UnixMilli()
 		result.LastSeen = &lastSeen
 	}
 	return result

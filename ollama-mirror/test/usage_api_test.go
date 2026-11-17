@@ -37,8 +37,8 @@ func TestMain(m *testing.M) {
 }
 
 type usageSnapshot struct {
-	Total    int64      `json:"total"`
-	LastSeen *time.Time `json:"last_seen"`
+	Total    int64 `json:"total"`
+	LastSeen *int64 `json:"last_seen"`
 }
 
 func startUsageAPI(t *testing.T) (*http.Client, string) {
@@ -126,6 +126,11 @@ func TestUsageAPITracksRequests(t *testing.T) {
 
 	if got := readUsage(t, client, baseURL); got.Total != 1 || got.LastSeen == nil {
 		t.Fatalf("usage after track = %+v, want total 1 and non-null last_seen", got)
+	} else {
+		now := time.Now().UnixMilli()
+		if *got.LastSeen < now-5000 || *got.LastSeen > now+5000 {
+			t.Fatalf("last_seen = %d, want milliseconds near %d", *got.LastSeen, now)
+		}
 	}
 }
 
