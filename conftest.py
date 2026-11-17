@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent
 class Session(TypedDict):
     client: requests.Session
     proxy: str
-    usage_api: str
+    sapodilla: str
     compose: str
 
 
@@ -46,13 +46,13 @@ def _compose(env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
 
 @pytest.fixture(scope="session")
 def session():
-    ports = {name: _free_port() for name in ("LISTEN_PORT", "USAGE_API_PORT", "UPSTREAM_PORT")}
+    ports = {name: _free_port() for name in ("LISTEN_PORT", "SAPODILLA_PORT", "UPSTREAM_PORT")}
     env = os.environ | {name: str(port) for name, port in ports.items()}
     client = requests.Session()
     deps: Session = {
         "client": client,
         "proxy": f"http://127.0.0.1:{ports['LISTEN_PORT']}",
-        "usage_api": f"http://127.0.0.1:{ports['USAGE_API_PORT']}",
+        "sapodilla": f"http://127.0.0.1:{ports['SAPODILLA_PORT']}",
         "compose": (ROOT / "compose.yaml").read_text(),
     }
     try:
@@ -67,4 +67,4 @@ def session():
 
 @pytest.fixture
 def usage_before(session: Session) -> int:
-    return session["client"].get(f"{session['usage_api']}/api/usage", timeout=5).json()["total"]
+    return session["client"].get(f"{session['sapodilla']}/api/usage", timeout=5).json()["total"]

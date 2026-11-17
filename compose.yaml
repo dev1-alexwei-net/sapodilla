@@ -14,10 +14,10 @@ services:
       LISTEN_PORT: "${LISTEN_PORT:-8080}"
       UPSTREAM_HOST: "${UPSTREAM_HOST:-echo-api}"
       UPSTREAM_PORT: "${UPSTREAM_PORT:-11434}"
-      USAGE_API_HOST: "${USAGE_API_HOST:-usage-api}"
-      USAGE_API_PORT: "${USAGE_API_PORT:-9090}"
+      SAPODILLA_HOST: "${SAPODILLA_HOST:-sapodilla}"
+      SAPODILLA_PORT: "${SAPODILLA_PORT:-9090}"
     depends_on:
-      usage-api:
+      sapodilla:
         condition: service_healthy
       echo-api:
         condition: service_started
@@ -25,20 +25,20 @@ services:
       - mirror
     restart: unless-stopped
 
-  usage-api:
+  sapodilla:
     build:
       context: .
-      dockerfile: Dockerfile.usage-api
+      dockerfile: Dockerfile.sapodilla
     ports:
-      - "127.0.0.1:${USAGE_API_PORT:-9090}:${USAGE_API_PORT:-9090}"
+      - "127.0.0.1:${SAPODILLA_PORT:-9090}:${SAPODILLA_PORT:-9090}"
     environment:
-      USAGE_API_PORT: "${USAGE_API_PORT:-9090}"
-      ADDR: "${ADDR:-:${USAGE_API_PORT:-9090}}"
+      SAPODILLA_PORT: "${SAPODILLA_PORT:-9090}"
+      ADDR: "${ADDR:-:${SAPODILLA_PORT:-9090}}"
     networks:
       - mirror
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${USAGE_API_PORT}/api/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${SAPODILLA_PORT}/api/healthz"]
       interval: 5s
       timeout: 2s
       retries: 5

@@ -7,13 +7,13 @@ only a total and the time of the latest request. It does not inspect requests.
 ## Repository layout
 
 ```text
-ollama-mirror/
+sapodilla/
 ├── go.mod                  # module root for the Go project and tests
 ├── src/                    # two Go source files
 └── test/                   # black-box Go API tests
 compose.yaml
 Dockerfile.mirror
-Dockerfile.usage-api
+Dockerfile.sapodilla
 Dockerfile.echo-api
 conftest.py
 test_proxy.py              # pytest/Compose integration harness
@@ -47,7 +47,7 @@ the mirror to a shared Docker network.
 ## Compose services
 
 - `mirror` — NGINX reverse proxy, published on `LISTEN_HOST:LISTEN_PORT`.
-- `usage-api` — Go REST API; its host port is bound to loopback only.
+- `sapodilla` — Go REST API; its host port is bound to loopback only.
 - `echo-api` — local generic echo service for development and tests.
 
 ## Configuration
@@ -61,48 +61,48 @@ the defaults below.
 | `LISTEN_PORT` | Proxy port (container and published host port) | `8080` |
 | `UPSTREAM_HOST` | API hostname as resolved by NGINX | `echo-api` |
 | `UPSTREAM_PORT` | API port; also configures the bundled echo service | `11434` |
-| `USAGE_API_HOST` | Go API hostname as resolved by NGINX | `usage-api` |
-| `USAGE_API_PORT` | Go API port used by NGINX and Compose | `9090` |
-| `ADDR` | Go API listen address; Compose derives it from `USAGE_API_PORT` unless set | `:9090` |
+| `SAPODILLA_HOST` | Go API hostname as resolved by NGINX | `sapodilla` |
+| `SAPODILLA_PORT` | Go API port used by NGINX and Compose | `9090` |
+| `ADDR` | Go API listen address; Compose derives it from `SAPODILLA_PORT` unless set | `:9090` |
 
-For the usage API binary, precedence is **`-addr` flag > `ADDR` environment
+For the Sapodilla binary, precedence is **`-addr` flag > `ADDR` environment
 variable > `:9090` default**. In Compose, if you set `ADDR` yourself, keep its
-port in sync with `USAGE_API_PORT`; the flag is mainly useful for direct binary
+port in sync with `SAPODILLA_PORT`; the flag is mainly useful for direct binary
 or container runs.
 
 ## Run the images directly
 
-The usage API container must be on the same Docker network as the proxy. These
-commands build the images and run the usage API and proxy on a shared network;
+The Sapodilla container must be on the same Docker network as the proxy. These
+commands build the images and run Sapodilla and the proxy on a shared network;
 replace `my-api:3000` with a reachable service name and port:
 
 ```sh
 docker network create usage-mirror
-docker build -t usage-api:local -f Dockerfile.usage-api .
+docker build -t sapodilla:local -f Dockerfile.sapodilla .
 docker build -t web-api-mirror:local -f Dockerfile.mirror .
 
-docker run -d --name usage-api --network usage-mirror \
-  -p 127.0.0.1:9090:9090 -e ADDR=:9090 usage-api:local
+docker run -d --name sapodilla --network usage-mirror \
+  -p 127.0.0.1:9090:9090 -e ADDR=:9090 sapodilla:local
 
 docker run -d --name mirror --network usage-mirror -p 0.0.0.0:9000:9000 \
   -e LISTEN_PORT=9000 \
   -e UPSTREAM_HOST=my-api -e UPSTREAM_PORT=3000 \
-  -e USAGE_API_HOST=usage-api -e USAGE_API_PORT=9090 web-api-mirror:local
+  -e SAPODILLA_HOST=sapodilla -e SAPODILLA_PORT=9090 web-api-mirror:local
 ```
 
-## Usage API
+## Sapodilla API
 
 - `GET /api/healthz` — liveness check.
 - `POST /track` — metadata-only request mirror target used by NGINX.
 - `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null, "last_seen_datetime": rfc3339_datetime|null }`.
 
-The counter is in memory and resets when the usage API restarts. The usage API
-is published on loopback by the Compose setup; the proxy itself is published
+The counter is in memory and resets when Sapodilla restarts. Sapodilla is
+published on loopback by the Compose setup; the proxy itself is published
 on `LISTEN_HOST`.
 
 ## Development
 
-Run the Go API tests from its module root with `cd ollama-mirror && go test ./...`.
+Run the Go API tests from its module root with `cd sapodilla && go test ./...`.
 The Docker Compose integration suite runs from the repository root with
 `python -m pytest -q`; it selects non-default ports to exercise the environment
 variable configuration path.

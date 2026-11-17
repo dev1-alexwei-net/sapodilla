@@ -17,12 +17,12 @@ import (
 var usageAPIBinary string
 
 func TestMain(m *testing.M) {
-	tempDir, err := os.MkdirTemp("", "usage-api-test-")
+	tempDir, err := os.MkdirTemp("", "sapodilla-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	usageAPIBinary = filepath.Join(tempDir, "usage-api")
+	usageAPIBinary = filepath.Join(tempDir, "sapodilla")
 
 	build := exec.Command("go", "build", "-race", "-o", usageAPIBinary, "../src")
 	if output, err := build.CombinedOutput(); err != nil {
