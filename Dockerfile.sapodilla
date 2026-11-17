@@ -1,0 +1,13 @@
+FROM golang:1.23-alpine AS builder
+WORKDIR /src
+COPY sapodilla/go.mod ./
+COPY sapodilla/src/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/sapodilla .
+
+FROM alpine:3.20
+RUN addgroup -S app && adduser -S app -G app
+COPY --from=builder /out/sapodilla /usr/local/bin/sapodilla
+USER app
+# Default Sapodilla service port; override with ADDR at runtime.
+EXPOSE 9090
+ENTRYPOINT ["/usr/local/bin/sapodilla"]

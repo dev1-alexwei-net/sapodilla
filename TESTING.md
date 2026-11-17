@@ -1,6 +1,6 @@
 # Testing
 
-The repository contains a Go usage API, a generic Python echo API for local
+The repository contains the Sapodilla Go service, a generic Python echo API for local
 integration runs, and a Docker Compose NGINX proxy. Tests do not require Ollama
 or a live external API.
 
@@ -15,7 +15,7 @@ or a live external API.
 Run black-box Go tests from the nested module root:
 
 ```sh
-cd ollama-mirror
+cd sapodilla
 go test -race ./...
 ```
 
@@ -25,9 +25,9 @@ Run the Python suite from the repository root:
 python -m pytest -q
 ```
 
-The Go tests build and start the usage API, then verify its health and REST
+The Go tests build and start Sapodilla, then verify its health and REST
 behavior, including concurrent tracking. Compose integration tests start the
-proxy, usage API, and bundled echo API with non-default ports, then verify
+proxy, Sapodilla, and bundled echo API with non-default ports, then verify
 request passthrough, mirrored usage counts, and that the usage API host port is
 loopback-only. Pytest tears down the Compose stack afterward.
 
@@ -39,7 +39,7 @@ docker compose up --build -d
 docker compose down
 ```
 
-Set `LISTEN_PORT` and `USAGE_API_PORT` consistently for both Compose and the
+Set `LISTEN_PORT` and `SAPODILLA_PORT` consistently for both Compose and the
 smoke script when using non-default ports.
 
 ## Continuous integration

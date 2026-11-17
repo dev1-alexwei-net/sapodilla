@@ -19,7 +19,7 @@ method and path.
 - Uses the standard NGINX mirror subrequest: failure to record usage does not
   replace the upstream response.
 
-### Go usage API
+### Go Sapodilla service
 
 The usage API uses only the Go standard library. Its concurrency-safe in-memory
 state contains exactly:
@@ -37,18 +37,18 @@ Its endpoints are:
 - `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null, "last_seen_datetime": rfc3339_datetime|null }`.
 - `GET /api/healthz` — reports API liveness.
 
-The REST API is served by the usage API, not by a special NGINX route. In the Compose
+The REST API is served by Sapodilla, not by a special NGINX route. In the Compose
 setup, the API is published on loopback for local inspection and is
 also reachable to NGINX over the internal network.
 
-State is not persisted. Restarting the usage API resets `total` and `last_seen`.
+State is not persisted. Restarting Sapodilla resets `total` and `last_seen`.
 
 ### Docker Compose
 
 Compose runs three services:
 
 - `mirror` — the client-facing NGINX proxy.
-- `usage-api` — the usage counter and REST API.
+- `sapodilla` — the usage counter and REST API.
 - `echo-api` — a generic echo service for local development and smoke tests.
 
 The upstream mock can be replaced by any HTTP service reachable from the

@@ -4,7 +4,7 @@
 .ruff_cache
 __pycache__
 **/__pycache__
-ollama-mirror/test
+sapodilla/test
 test_*.py
 conftest.py
 *.md

@@ -17,9 +17,9 @@ COPY nginx/ollama-mirror.conf /etc/nginx/templates/ollama-mirror.conf.template
 ENV LISTEN_PORT=8080 \
     UPSTREAM_HOST=echo-api \
     UPSTREAM_PORT=11434 \
-    USAGE_API_HOST=usage-api \
-    USAGE_API_PORT=9090 \
-    NGINX_ENVSUBST_FILTER='^(LISTEN_PORT|UPSTREAM_HOST|UPSTREAM_PORT|USAGE_API_HOST|USAGE_API_PORT)$'
+    SAPODILLA_HOST=sapodilla \
+    SAPODILLA_PORT=9090 \
+    NGINX_ENVSUBST_FILTER='^(LISTEN_PORT|UPSTREAM_HOST|UPSTREAM_PORT|SAPODILLA_HOST|SAPODILLA_PORT)$'
 
 # Check the process/config, without assuming the upstream implements a
 # particular health endpoint.

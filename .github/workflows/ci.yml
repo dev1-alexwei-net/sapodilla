@@ -31,7 +31,7 @@ jobs:
 
       - name: gofmt check
         run: |
-          out="$(cd ollama-mirror && find src test -name '*.go' -print0 | xargs -0 gofmt -l)"
+          out="$(cd sapodilla && find src test -name '*.go' -print0 | xargs -0 gofmt -l)"
           if [ -n "$out" ]; then
             echo "::error::The following files need gofmt (run 'gofmt -w src test'):"
             echo "$out"
@@ -39,16 +39,16 @@ jobs:
           fi
 
       - name: go vet
-        run: cd ollama-mirror && go vet ./...
+        run: cd sapodilla && go vet ./...
 
       - name: go test -race
-        run: cd ollama-mirror && go test -race -v ./...
+        run: cd sapodilla && go test -race -v ./...
 
       - name: Save test results
         if: always()
         run: |
           mkdir -p /tmp/test-logs
-          cd ollama-mirror && go test -race -v -json ./... > /tmp/test-logs/go-test.json 2>&1 || true
+          cd sapodilla && go test -race -v -json ./... > /tmp/test-logs/go-test.json 2>&1 || true
           echo '{"summary":"go test results"}' > /tmp/test-logs/manifest.json
 
       - name: Upload test logs
@@ -86,8 +86,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build usage-api image
-        run: docker build -t ollama-mirror:ci -f Dockerfile.usage-api .
+      - name: Build sapodilla image
+        run: docker build -t sapodilla:ci -f Dockerfile.sapodilla .
 
       - name: Build mirror image
         run: docker build -t ollama-mirror-nginx:ci -f Dockerfile.mirror .
@@ -97,7 +97,7 @@ jobs:
 
       - name: Verify images
         run: |
-          docker images | grep ollama-mirror
+          docker images | grep -E 'sapodilla|ollama-mirror'
           echo "Images built successfully"
 
   smoke:
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LISTEN_PORT: "18080"
-      USAGE_API_PORT: "19090"
+      SAPODILLA_PORT: "19090"
       UPSTREAM_PORT: "11435"
     needs: [go-test, docker-build]
     steps:
@@ -116,15 +116,15 @@ jobs:
           docker compose up -d
           echo "Stack started"
 
-      - name: Wait for usage API
+      - name: Wait for Sapodilla
         run: |
           for i in $(seq 1 60); do
-            if curl -fsS "http://localhost:${USAGE_API_PORT}/api/healthz" >/dev/null 2>&1; then
-              echo "Usage API ready after ${i}s"
+            if curl -fsS "http://localhost:${SAPODILLA_PORT}/api/healthz" >/dev/null 2>&1; then
+              echo "Sapodilla ready after ${i}s"
               break
             fi
             if [ "$i" -eq 60 ]; then
-              echo "::error::Usage API never became ready"
+              echo "::error::Sapodilla never became ready"
               docker compose logs || true
               exit 1
             fi
@@ -148,8 +148,8 @@ jobs:
 
       - name: Health check
         run: |
-          echo "=== Usage API healthz ==="
-          curl -sf "http://localhost:${USAGE_API_PORT}/api/healthz"
+          echo "=== Sapodilla healthz ==="
+          curl -sf "http://localhost:${SAPODILLA_PORT}/api/healthz"
           echo ""
           echo "=== Proxy reachable ==="
           curl -s -o /dev/null -w 'HTTP %{http_code}\n' "http://localhost:${LISTEN_PORT}/"
@@ -170,8 +170,8 @@ jobs:
 
       - name: Usage endpoint
         run: |
-          echo "=== Usage via usage API ==="
-          curl -sf "http://localhost:${USAGE_API_PORT}/api/usage" | python3 -m json.tool
+          echo "=== Usage via Sapodilla ==="
+          curl -sf "http://localhost:${SAPODILLA_PORT}/api/usage" | python3 -m json.tool
           echo ""
 
       - name: Make a tracked request
@@ -184,11 +184,11 @@ jobs:
 
       - name: Verify tracking
         run: |
-          echo "=== Usage after request (via usage API) ==="
-          curl -sf "http://localhost:${USAGE_API_PORT}/api/usage" | python3 -m json.tool
+          echo "=== Usage after request (via Sapodilla) ==="
+          curl -sf "http://localhost:${SAPODILLA_PORT}/api/usage" | python3 -m json.tool
           echo ""
           echo "=== Checking total > 0 ==="
-          total=$(curl -sf "http://localhost:${USAGE_API_PORT}/api/usage" | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")
+          total=$(curl -sf "http://localhost:${SAPODILLA_PORT}/api/usage" | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")
           if [ "$total" -gt 0 ]; then
             echo "PASS: total=$total"
           else
@@ -251,18 +251,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push usage-api (${{ matrix.arch }})
+      - name: Build and push sapodilla (${{ matrix.arch }})
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.usage-api
+          file: Dockerfile.sapodilla
           platforms: linux/${{ matrix.arch }}
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}:latest-${{ matrix.arch }}
             ${{ env.IMAGE_PREFIX }}:${{ github.sha }}-${{ matrix.arch }}
-          cache-from: type=gha,scope=usage-api-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=usage-api-${{ matrix.arch }}
+          cache-from: type=gha,scope=sapodilla-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=sapodilla-${{ matrix.arch }}
 
       - name: Build and push mirror (${{ matrix.arch }})
         uses: docker/build-push-action@v6
@@ -297,7 +297,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push usage-api manifest
+      - name: Create and push sapodilla manifest
         run: |
           docker buildx imagetools create \
             -t ${{ env.IMAGE_PREFIX }}:latest \
