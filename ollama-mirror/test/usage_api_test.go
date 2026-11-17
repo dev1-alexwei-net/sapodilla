@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 }
 
 type usageSnapshot struct {
-	Total            int64  `json:"total"`
+	Total            int64   `json:"total"`
 	LastSeen         *int64  `json:"last_seen"`
 	LastSeenDateTime *string `json:"last_seen_datetime"`
 }
