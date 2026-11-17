@@ -1,30 +1,52 @@
-# Generic web-API usage mirror
+# Generic web-API usage sidecar
 
-A small NGINX reverse proxy with a Go REST API that counts proxied requests. It
-forwards any HTTP method, path, query, and body to your API; the usage API stores
-only a total and the time of the latest request. It does not inspect requests.
+A small Go REST API that counts proxied requests. It is the core microservice
+in this project: a lightweight, stateless usage tracker that records a request
+total and the time of the latest request. It does not inspect request bodies or
+payloads — it only counts.
+
+Sapodilla exists so that your proxy server, like nginx, can mirror requests
+to the tracking endpoint, e.g.:
+
+```nginx
+        mirror /track-usage-api;
+```
+
+The repository also includes an optional NGINX configuration and Compose stack
+for local development and testing of that setup. In production you would
+typically point your own proxy (or the API itself) at the endpoint.
+
+## What the sidecar does
+
+- Exposes a tiny REST API (`/track`, `/api/usage`, `/api/healthz`).
+- Keeps a request counter in memory plus the timestamp of the most recent
+  request.
+- Is deliberately stateless about request content — it never reads or logs
+  bodies, headers, or paths beyond an access log.
+- Is cheap to run as a standalone container or sidecar alongside any API.
 
 ## Repository layout
 
 ```text
 ollama-mirror/
 ├── go.mod                  # module root for the Go project and tests
-├── src/                    # two Go source files
+├── src/                    # Go source files (usage-api binary)
 └── test/                   # black-box Go API tests
 compose.yaml
-Dockerfile.mirror
-Dockerfile.usage-api
+Dockerfile.usage-api        # the usage-api Go sidecar (the core component)
+Dockerfile.mirror           # optional NGINX front-end for local dev
 Dockerfile.echo-api
 conftest.py
 test_proxy.py              # pytest/Compose integration harness
-nginx/                     # NGINX configuration
+nginx/                     # NGINX configuration (development-only mirror)
 upstream/                  # local echo API implementation
 ```
 
 ## Quick start with Docker Compose
 
-The included `echo-api` service is a generic mock for trying the stack without
-another service. Start the stack and send a request through the proxy:
+The Compose stack runs the usage-api sidecar together with the optional NGINX
+mirror and a generic `echo-api` mock for trying the setup without another
+service. Start the stack and send a request through the proxy:
 
 ```sh
 docker compose up --build -d
@@ -40,41 +62,35 @@ LISTEN_PORT=9000 UPSTREAM_HOST=my-api UPSTREAM_PORT=3000 docker compose up -d
 curl http://localhost:9000/any/path
 ```
 
-The upstream must be resolvable and reachable from the NGINX container. For a
-service in another Compose project or a standalone container, attach it and
-the mirror to a shared Docker network.
+If you only need the sidecar itself, run the usage-api container directly (see
+below) and point your own proxy or client at it.
 
 ## Compose services
 
-- `mirror` — NGINX reverse proxy, published on `LISTEN_HOST:LISTEN_PORT`.
-- `usage-api` — Go REST API; its host port is bound to loopback only.
+- `usage-api` — the Go REST API sidecar (the core component); published on
+  loopback only.
+- `mirror` — optional NGINX reverse proxy for local development, published on
+  `LISTEN_HOST:LISTEN_PORT`.
 - `echo-api` — local generic echo service for development and tests.
 
-## Configuration
+## Run the usage-api sidecar directly
 
-Compose passes these variables into the containers. Unset or empty values use
-the defaults below.
+The sidecar is the core of the project and can run as a standalone container.
+It listens on `ADDR` (default `:9090`):
 
-| Variable | Meaning | Default |
-| --- | --- | --- |
-| `LISTEN_HOST` | Host address used to publish the proxy port | `0.0.0.0` |
-| `LISTEN_PORT` | Proxy port (container and published host port) | `8080` |
-| `UPSTREAM_HOST` | API hostname as resolved by NGINX | `echo-api` |
-| `UPSTREAM_PORT` | API port; also configures the bundled echo service | `11434` |
-| `USAGE_API_HOST` | Go API hostname as resolved by NGINX | `usage-api` |
-| `USAGE_API_PORT` | Go API port used by NGINX and Compose | `9090` |
-| `ADDR` | Go API listen address; Compose derives it from `USAGE_API_PORT` unless set | `:9090` |
+```sh
+docker build -t usage-api:local -f Dockerfile.usage-api .
+docker run -d --name usage-api -p 127.0.0.1:9090:9090 usage-api:local
+```
 
-For the usage API binary, precedence is **`-addr` flag > `ADDR` environment
-variable > `:9090` default**. In Compose, if you set `ADDR` yourself, keep its
-port in sync with `USAGE_API_PORT`; the flag is mainly useful for direct binary
-or container runs.
+For flag-based control when running the binary directly, precedence is
+**`-addr` flag > `ADDR` environment variable > `:9090` default**.
 
-## Run the images directly
+### Optional: run the NGINX development mirror
 
-The usage API container must be on the same Docker network as the proxy. These
-commands build the images and run the usage API and proxy on a shared network;
-replace `my-api:3000` with a reachable service name and port:
+If you want the bundled NGINX mirror in front of the sidecar (local dev/test),
+put both on the same Docker network and point NGINX at your upstream. Replace
+`my-api:3000` with a reachable service name and port:
 
 ```sh
 docker network create usage-mirror
@@ -90,15 +106,36 @@ docker run -d --name mirror --network usage-mirror -p 0.0.0.0:9000:9000 \
   -e USAGE_API_HOST=usage-api -e USAGE_API_PORT=9090 web-api-mirror:local
 ```
 
+The usage-api container must share a Docker network with the NGINX mirror.
+
+## Configuration
+
+Compose passes these variables into the containers. Unset or empty values use
+the defaults below.
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `ADDR` | usage-api listen address; Compose derives it from `USAGE_API_PORT` unless set | `:9090` |
+| `LISTEN_HOST` | Host address used to publish the proxy port | `0.0.0.0` |
+| `LISTEN_PORT` | Proxy port (container and published host port) | `8080` |
+| `UPSTREAM_HOST` | API hostname as resolved by NGINX | `echo-api` |
+| `UPSTREAM_PORT` | API port; also configures the bundled echo service | `11434` |
+| `USAGE_API_HOST` | usage-api hostname as resolved by NGINX | `usage-api` |
+| `USAGE_API_PORT` | usage-api port used by NGINX and Compose | `9090` |
+
+The usage-api port is `USAGE_API_PORT`; `ADDR` sets the actual listen socket.
+Keep them in sync when you override `ADDR` yourself.
+
 ## Usage API
 
 - `GET /api/healthz` — liveness check.
-- `POST /track` — metadata-only request mirror target used by NGINX.
+- `POST /track` — metadata-only request target used by the NGINX mirror to
+  record a request.
 - `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null, "last_seen_datetime": rfc3339_datetime|null }`.
 
-The counter is in memory and resets when the usage API restarts. The usage API
-is published on loopback by the Compose setup; the proxy itself is published
-on `LISTEN_HOST`.
+The counter is in memory and resets when the usage-api restarts. In the Compose
+setup the usage-api is published on loopback only; the optional NGINX proxy is
+published on `LISTEN_HOST`.
 
 ## Development
 
