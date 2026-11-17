@@ -94,7 +94,7 @@ docker run -d --name mirror --network usage-mirror -p 0.0.0.0:9000:9000 \
 
 - `GET /api/healthz` — liveness check.
 - `POST /track` — metadata-only request mirror target used by NGINX.
-- `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null }`.
+- `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null, "last_seen_datetime": rfc3339_datetime|null }`.
 
 The counter is in memory and resets when the usage API restarts. The usage API
 is published on loopback by the Compose setup; the proxy itself is published

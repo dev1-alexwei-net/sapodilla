@@ -27,12 +27,14 @@ state contains exactly:
 - `total`: cumulative number of mirrored requests.
 - `last_seen`: Unix epoch timestamp in milliseconds for the most recent request, or `null` before the
   first request.
+- `last_seen_datetime`: RFC3339 datetime string for the most recent request, or `null` before the
+  first request.
 
 Its endpoints are:
 
 - `POST /track` — called by NGINX; records one request and returns a small
   acknowledgement. Request content is ignored.
-- `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null }`.
+- `GET /api/usage` — returns `{ "total": number, "last_seen": epoch_milliseconds|null, "last_seen_datetime": rfc3339_datetime|null }`.
 - `GET /api/healthz` — reports API liveness.
 
 The REST API is served by the usage API, not by a special NGINX route. In the Compose
