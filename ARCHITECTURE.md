@@ -25,10 +25,10 @@ The usage API uses only the Go standard library. Its concurrency-safe in-memory
 state contains exactly:
 
 - `total`: cumulative number of mirrored requests.
-- `last_seen`: Unix epoch timestamp in milliseconds for the most recent request, or `null` before the
-  first request.
-- `last_seen_datetime`: RFC3339 datetime string for the most recent request, or `null` before the
-  first request.
+- `last_seen`: Unix epoch timestamp in milliseconds for the most recent request, initialized to
+  the server startup time before the first request.
+- `last_seen_datetime`: RFC3339 datetime string for the most recent request, initialized to the
+  server startup time before the first request.
 
 Its endpoints are:
 
@@ -41,7 +41,8 @@ The REST API is served by Sapodilla, not by a special NGINX route. In the Compos
 setup, the API is published on loopback for local inspection and is
 also reachable to NGINX over the internal network.
 
-State is not persisted. Restarting Sapodilla resets `total` and `last_seen`.
+State is not persisted. Restarting Sapodilla resets `total` to zero and `last_seen` to the new
+server startup time.
 
 ### Docker Compose
 
@@ -62,7 +63,7 @@ flowchart LR
     Client -->|any method, path, query, body| NGINX
     NGINX -->|original request| Upstream
     NGINX -.->|metadata-only mirror| Track[Usage API /track]
-    Track -->|increment total, update last_seen| State[(In-memory state)]
+    Track -->|increment total, update last_seen| State[(In-memory state initialized at startup)]
     Operator -->|GET /api/usage| UsageAPI[Usage API]
     UsageAPI --> State
 ```

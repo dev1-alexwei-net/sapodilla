@@ -46,7 +46,7 @@ func main() {
 	addr := flag.String("addr", envOr("ADDR", ":9090"), "listen address")
 	flag.Parse()
 
-	s := &session{}
+	s := &session{lastSeen: time.Now()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/track", s.track)
 	mux.HandleFunc("/api/usage", s.usage)
