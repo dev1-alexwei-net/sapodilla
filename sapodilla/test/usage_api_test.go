@@ -112,8 +112,8 @@ func readUsage(t *testing.T, client *http.Client, baseURL string) usageSnapshot 
 
 func TestUsageAPITracksRequests(t *testing.T) {
 	client, baseURL := startUsageAPI(t)
-	if got := readUsage(t, client, baseURL); got.Total != 0 || got.LastSeen != nil || got.LastSeenDateTime != nil {
-		t.Fatalf("initial usage = %+v, want zero total and null timestamps", got)
+	if got := readUsage(t, client, baseURL); got.Total != 0 || got.LastSeen == nil || got.LastSeenDateTime == nil {
+		t.Fatalf("initial usage = %+v, want zero total and non-null startup timestamps", got)
 	}
 
 	response, err := client.Post(baseURL+"/track", "application/json", nil)
